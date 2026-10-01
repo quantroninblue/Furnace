@@ -1,0 +1,15 @@
+# Local architecture draft for private review.
+/architecture.md
+/name_idea.txt
+node_modules/
+out/
+dist/
+coverage/
+test-results/
+playwright-report/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.agent-workspace/

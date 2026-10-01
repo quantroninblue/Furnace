@@ -1,0 +1,24 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #202020; color: #d4cfc7; font: 12px system-ui, sans-serif; }
+button, input { font: inherit; }
+button { color: inherit; background: transparent; border: 0; cursor: pointer; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; }
+button:hover { background: #ffffff10; }
+button:disabled { opacity: .3; cursor: default; }
+button:focus-visible, input:focus-visible { outline: 1px solid #bcb3a4; outline-offset: 1px; }
+.browser-shell { height: 112px; background: linear-gradient(#272727, #202020); border-bottom: 1px solid #ffffff12; position: relative; }
+.browser-titlebar { height: 34px; display: flex; align-items: center; gap: 9px; padding-left: 14px; -webkit-app-region: drag; color: #aaa59e; }
+.browser-titlebar > span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.browser-window-controls { display: flex; align-self: stretch; -webkit-app-region: no-drag; }
+.browser-window-controls button { width: 42px; border-radius: 0; }
+.browser-window-controls button:last-child:hover { background: #8a4848; color: #fff; }
+.browser-navigation { height: 46px; display: flex; align-items: center; padding: 4px 12px; gap: 4px; }
+.browser-navigation > button { width: 32px; height: 32px; }
+.browser-navigation form { margin-left: 8px; flex: 1; min-width: 0; display: flex; align-items: center; height: 34px; padding: 0 10px; background: #161616; border: 1px solid #ffffff13; border-radius: 8px; color: #928c83; }
+.browser-navigation form:focus-within { border-color: #bfb5a45c; }
+.browser-navigation input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #e1dcd4; padding: 6px 10px; }
+.browser-navigation form button { height: 26px; padding: 0 9px; color: #c8bfb1; }
+.browser-status { height: 31px; padding: 5px 16px; font-size: 11px; color: #938f88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser-status.has-error { color: #dfad9e; }
+.browser-progress { position: absolute; bottom: 0; height: 2px; width: 24%; background: #c2b6a3; animation: loading 1.2s ease-in-out infinite alternate; }
+@keyframes loading { from { left: 0; } to { left: 76%; } }
+@media (prefers-reduced-motion: reduce) { .browser-progress { animation: none; width: 100%; opacity: .4; } }
