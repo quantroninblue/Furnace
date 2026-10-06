@@ -1,0 +1,10 @@
+{
+  "extensionsGallery": {
+    "serviceUrl": "https://open-vsx.org/vscode/gallery",
+    "controlUrl": "",
+    "extensionUrlTemplate": "https://open-vsx.org/vscode/gallery/{publisher}/{name}/latest",
+    "resourceUrlTemplate": "https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}/{path}",
+    "nlsBaseUrl": ""
+  },
+  "linkProtectionTrustedDomains": ["https://open-vsx.org"]
+}

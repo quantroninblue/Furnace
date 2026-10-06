@@ -14,7 +14,8 @@
     "test:review": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/review-smoke.mjs",
     "test:assistant": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/assistant-smoke.mjs",
     "typecheck": "tsc --noEmit -p prototypes/shared/assistant/tsconfig.json",
-    "test:trust": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/trust-smoke.mjs"
+    "test:trust": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/trust-smoke.mjs",
+    "test:debug": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/debug-smoke.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

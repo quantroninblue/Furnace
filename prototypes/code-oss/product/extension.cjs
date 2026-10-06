@@ -31,9 +31,14 @@ exports.activate = async context => {
         indicator.text = model ? `$(circle-filled) ${model.name}` : chat?.connections.models?.length ? '$(circle-outline) Choose a model' : '$(plug) Connect a model';
         indicator.tooltip = model ? `Active model: ${model.name}. Click to manage connections.` : 'Open AI GUI connections';
     };
+    // First-run tutorial progress (global, survives restarts). The first agent reply
+    // with tool steps completes the "first task" step.
+    let tour = { dismissed: false, seen: {}, ...context.globalState.get('tour') };
+    const updateTour = changes => { tour = { ...tour, ...changes, seen: { ...tour.seen, ...changes.seen } }; void context.globalState.update('tour', tour); };
     const broadcast = () => {
         const chat = conversation?.snapshot(); showIndicator(chat);
-        for (const view of views) void view.postMessage({ type: 'state', state: session.snapshot(), scope: scope(), review: reviews.state(), research: research.snapshot(), chat, status: lastStatus });
+        if (!tour.seen.task && chat?.messages.some(message => message.role === 'assistant' && message.steps?.length && message.state === 'complete')) updateTour({ seen: { task: true } });
+        for (const view of views) void view.postMessage({ type: 'state', state: session.snapshot(), scope: scope(), review: reviews.state(), research: research.snapshot(), chat, status: lastStatus, tour });
     };
     const status = text => { lastStatus = text; broadcast(); };
     const documents = new CodeOssDocuments(context, uri => {
@@ -151,6 +156,16 @@ exports.activate = async context => {
                     status({ ask: 'Ask: the agent asks before each change and command.', auto: `Auto: project edits apply directly${sandbox.path ? '; commands run sandboxed' : '; commands ask first (sandbox unavailable)'}.`, full: 'Full access: no approvals and no sandbox.' }[message.value]);
                 }
                 else if (message.type === 'trustFolder') await requestTrust();
+                else if (message.type === 'tour') { if (message.action === 'ack' && ['permissions', 'review'].includes(message.step)) updateTour({ seen: { [message.step]: true } }); broadcast(); }
+                else if (message.type === 'tourDismiss') { updateTour({ dismissed: true }); broadcast(); }
+                else if (message.type === 'tourShow') await showTour();
+                else if (message.type === 'tourExample') {
+                    session.update('mode', 'Build'); session.update('draft', 'Create a file named hello.txt that says "Hello from AI GUI", then list the files in the project.'); save(); broadcast();
+                    await vscode.commands.executeCommand('aiGui.conversation.focus');
+                    status('Example ready in the message box. Press Enter to send it.');
+                }
+                else if (message.type === 'focusConversation') await vscode.commands.executeCommand('aiGui.conversation.focus');
+                else if (['textSmaller', 'textLarger', 'textReset'].includes(message.type)) await textSize(message.type);
                 else if (message.type === 'openDiff') {
                     const files = conversation.approvalFiles(message.id);
                     if (!files?.length) throw new Error('This change is no longer pending.');
@@ -209,11 +224,20 @@ exports.activate = async context => {
             view.onDidDispose(() => { for (const disposable of disposables) disposable.dispose(); });
         }
     }, { webviewOptions: { retainContextWhenHidden: true } }));
+    async function showTour() { updateTour({ dismissed: false }); session.update('mode', 'Discuss'); save(); await showHome(); }
+    // Whole-window zoom: the workbench has no general UI font size setting.
+    async function textSize(action) {
+        const config = vscode.workspace.getConfiguration('window'), current = Number(config.get('zoomLevel')) || 0;
+        const next = action === 'textReset' ? 1 : Math.min(4, Math.max(-2, current + (action === 'textLarger' ? 0.5 : -0.5)));
+        await config.update('zoomLevel', next, vscode.ConfigurationTarget.Global);
+        status(`Text size ${Math.round(Math.pow(1.2, next) * 100)}%.`);
+    }
     async function showConnections() {
         await showHome(); void home.webview.postMessage({ type: 'connections' });
         if (!conversation.connecting) { conversation.connections = await provider.status(); broadcast(); }
     }
     context.subscriptions.push(vscode.commands.registerCommand('aiGui.home', showHome));
+    context.subscriptions.push(vscode.commands.registerCommand('aiGui.tour', () => showTour().catch(error => status(error.message))));
     context.subscriptions.push(vscode.commands.registerCommand('aiGui.connections', () => showConnections().catch(error => status(error.message))));
     const command = (name, action) => context.subscriptions.push(vscode.commands.registerCommand(name, async () => {
         try { return await action(); } catch (error) { status(error.message); throw error; }

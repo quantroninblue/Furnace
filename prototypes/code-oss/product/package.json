@@ -24,6 +24,10 @@
         "title": "AI GUI: Open Workspace"
       },
       {
+        "command": "aiGui.tour",
+        "title": "AI GUI: Getting Started"
+      },
+      {
         "command": "aiGui.connections",
         "title": "AI GUI: Connections"
       },

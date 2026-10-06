@@ -30,6 +30,11 @@ export async function launchOptions(profile = process.env.AI_GUI_CODE_OSS_PROFIL
             }
         }
     }
+    // Product overrides (Open VSX extension gallery). Development builds merge
+    // upstream/product.overrides.json, which upstream's .gitignore already excludes.
+    const overrides = await readFile(path.join(root, 'product.overrides.json'), 'utf8');
+    const target = path.join(upstream, 'product.overrides.json');
+    if (await readFile(target, 'utf8').catch(() => '') !== overrides) await writeFile(target, overrides);
     delete env.VSCODE_IPC_HOOK_CLI;
     delete env.VSCODE_PORTABLE;
     const absoluteProfile = path.resolve(profile);
@@ -43,6 +48,8 @@ export async function launchOptions(profile = process.env.AI_GUI_CODE_OSS_PROFIL
         'workbench.startupEditor': 'none', 'workbench.secondarySideBar.defaultVisibility': 'visible',
         'telemetry.telemetryLevel': 'off', 'extensions.autoUpdate': false,
         'extensions.autoCheckUpdates': false, 'window.commandCenter': false,
+        // 120%: readable on dense laptop screens; users change it with Text size or Ctrl+=/-.
+        'window.zoomLevel': 1,
     };
     const settingsFile = path.join(settingsDirectory, 'settings.json');
     let settings;
@@ -59,7 +66,7 @@ export async function launchOptions(profile = process.env.AI_GUI_CODE_OSS_PROFIL
             '--shared-data-dir', path.join(absoluteProfile, 'shared-data'),
             '--extensions-dir', path.join(absoluteProfile, 'extensions'),
             '--extensionDevelopmentPath', path.join(root, '.cache/product'),
-            '--disable-extension=vscode.vscode-api-tests', '--skip-welcome', '--skip-release-notes',
+            '--disable-extension=vscode.vscode-api-tests', '--disable-extension=vscode.vscode-colorize-tests', '--disable-extension=vscode.vscode-colorize-perf-tests', '--skip-welcome', '--skip-release-notes',
             '--disable-telemetry', '--disable-updates'],
     };
 }

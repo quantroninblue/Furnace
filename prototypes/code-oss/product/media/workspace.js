@@ -29,6 +29,8 @@ const slashCommands = [
     { name: 'attach', description: 'Import files as context', run: () => { setDraft(''); send('attach'); } },
     { name: 'workspace', description: 'Open the workspace page', run: () => { setDraft(''); send('home'); } },
     { name: 'stop', description: 'Stop the current reply or command', run: () => { setDraft(''); send('stop'); } },
+    { name: 'tour', description: 'Show the getting started guide', run: () => { setDraft(''); send('tourShow'); } },
+    { name: 'zoom', hint: 'in|out|reset', description: 'Make all text larger or smaller', run: arg => { setDraft(''); send(arg === 'out' ? 'textSmaller' : arg === 'reset' ? 'textReset' : 'textLarger'); } },
     { name: 'help', description: 'Show these commands', run: () => setDraft('/') },
 ];
 function slash() {
@@ -65,7 +67,7 @@ function submit() {
 function command(name) {
     const actions = {
         send: submit,
-        hideConnections: () => { el('connections').hidden = true; el('workspace-pages').hidden = false; },
+        hideConnections: () => { el('connections').hidden = true; el('workspace-pages').hidden = false; if (latest) renderTour(latest); },
         refreshConnections: () => connection('discover'),
         connect: () => { const key = el('api-key').value; el('api-key').value = ''; connection('connect', { provider: el('provider').value, key, remember: el('remember').checked }); },
         disconnect: () => connection('disconnect', { provider: el('provider').value }),
@@ -232,6 +234,41 @@ function renderChat(chat, research) {
     }
     if (!chat.messages.length) scroller.scrollTop = 0; else if (atBottom) scroller.scrollTop = scroller.scrollHeight;
 }
+// First-run tutorial: each step is derived from live state, so it completes itself.
+function tourSteps(data) {
+    const chat = data.chat || {}, models = chat.connections?.models || [], project = chat.agent?.project, seen = data.tour?.seen || {};
+    const permission = value => () => { send('permission', { value }); send('tour', { action: 'ack', step: 'permissions' }); };
+    return [
+        { title: 'Connect a model', text: 'Use your ChatGPT plan, Claude Code, an OpenAI or Anthropic API key, or a local Ollama model.', done: models.length > 0, actions: [['Open Connections', () => send('connections'), 'primary']] },
+        { title: 'Choose a model', text: 'Pick it in the model menu inside the message box, at the bottom of the conversation panel. The status bar always shows the active model.', done: models.some(model => model.id === chat.model), actions: [['Show Conversation', () => send('focusConversation'), 'primary']] },
+        { title: 'Open a project folder', text: 'The agent works on the files in the folder you open. You can also just chat without one.', done: !!project, actions: [['Open Folder', () => send('openFolder'), 'primary']] },
+        { title: 'Trust the folder', text: 'Trusting lets the agent read and change files and run commands there. Only trust projects you know.', done: !!project?.trusted, actions: project ? [['Trust Folder', () => send('trustFolder'), 'primary']] : [] },
+        { title: 'Choose how much the agent may do', text: 'Ask first: you approve every change and command. Auto: project edits apply directly and commands run in a sandbox without network. Full access: no approvals and no sandbox. You can change this any time above the message box.', done: !!seen.permissions,
+            actions: [['Ask first', permission('ask'), chat.permission === 'ask' ? 'primary' : 'ghost'], ['Auto', permission('auto'), chat.permission === 'auto' ? 'primary' : 'ghost'], ['Full access', permission('full'), chat.permission === 'full' ? 'primary' : 'ghost']] },
+        { title: 'Give it a first task', text: 'Switch to Build mode and describe a small change. Each action the agent takes shows up as a step you can open.', done: !!seen.task, actions: [['Try an Example', () => send('tourExample'), 'primary']] },
+        { title: 'Review, undo and stop', text: 'Open a step to see its diff or output. Undo (Ctrl+Z) in the editor reverses an edit, and the square button stops the agent. Text too small? Use Text size at the top of this page, or Ctrl+= and Ctrl+−.', done: !!seen.review, actions: [['Got It', () => send('tour', { action: 'ack', step: 'review' }), 'primary']] },
+    ];
+}
+function renderTour(data) {
+    const steps = tourSteps(data), done = steps.filter(step => step.done).length, complete = done === steps.length;
+    if (el('tour-hint')) { el('tour-hint').hidden = !!data.tour?.dismissed || complete; el('tour-hint').textContent = `Getting started · ${done} of ${steps.length} done →`; }
+    const tour = el('tour'); if (!tour) return;
+    tour.hidden = !!data.tour?.dismissed || !el('connections').hidden;
+    el('tour-progress').textContent = `${done} of ${steps.length}`;
+    el('tour-title').textContent = complete ? 'You’re all set' : 'Set up AI GUI in a few steps';
+    el('tour-dismiss').textContent = complete ? 'Close' : 'Skip tour';
+    const current = steps.findIndex(step => !step.done);
+    el('tour-steps').replaceChildren(...steps.map((step, index) => {
+        const item = text('li', '', `tour-step ${step.done ? 'done' : index === current ? 'current' : 'pending'}`);
+        const head = text('div', '', 'tour-step-head'); head.append(text('span', step.done ? '✓' : String(index + 1), 'tour-marker'), text('strong', step.title));
+        item.append(head);
+        if (index === current) {
+            item.append(text('p', step.text));
+            if (step.actions.length) { const row = text('div', '', 'row'); for (const [label, action, style] of step.actions) row.append(button(label, action, style)); item.append(row); }
+        }
+        return item;
+    }));
+}
 function renderConnections(chat) {
     const c = chat.connections, by = provider => (c.connections || []).find(item => item.provider === provider);
     for (const node of document.querySelectorAll('#connections button')) node.disabled = !!chat.connecting && !['chatgptCancel', 'hideConnections'].includes(node.dataset.command) && !node.dataset.tab;
@@ -272,9 +309,10 @@ function render(data) {
         if (surface === 'conversation') renderChat(data.chat, data.research);
         else renderConnections(data.chat);
     }
+    renderTour(data);
 }
 window.addEventListener('message', ({ data }) => {
-    if (data.type === 'connections' && el('connections')) { el('connections').hidden = false; el('workspace-pages').hidden = true; return; }
+    if (data.type === 'connections' && el('connections')) { el('connections').hidden = false; el('workspace-pages').hidden = true; if (latest) renderTour(latest); return; }
     if (data.type !== 'state') return;
     if (data.status !== latest?.status) localStatus = '';
     render(data);
