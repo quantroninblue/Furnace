@@ -2,43 +2,30 @@
   "name": "ai-gui",
   "version": "0.1.0",
   "private": true,
-  "description": "A hands-on desktop workspace for collaborating with coding agents.",
-  "main": "out/main/index.js",
+  "description": "Private Code OSS workspace and independent product core.",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
-    "start": "electron-vite preview",
-    "typecheck": "tsc --noEmit",
-    "postinstall": "electron-rebuild -f -w node-pty && node scripts/prepare-linux-sandbox.mjs",
-    "test": "tsx --test tests/*.test.ts",
-    "test:smoke": "npm run build && playwright test"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.129.0",
-    "@modelcontextprotocol/sdk": "^1.31.0",
-    "@monaco-editor/react": "^4.7.0",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/xterm": "^5.5.0",
-    "jose": "^6.2.12",
-    "lucide-react": "^0.577.0",
-    "monaco-editor": "^0.57.0",
-    "node-pty": "^1.1.0",
-    "openai": "^7.25.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "react-markdown": "^10.1.0"
+    "build": "node prototypes/code-oss/scripts/build-product.mjs",
+    "start": "node prototypes/code-oss/scripts/start.mjs",
+    "test": "node --import tsx --test prototypes/shared/*.test.cjs prototypes/code-oss/product/*.test.cjs prototypes/shared/assistant/tests/*.test.ts prototypes/shared/assistant/*.test.cjs",
+    "test:research": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/research-smoke.mjs",
+    "test:browser": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/browser-smoke.mjs",
+    "test:browser-integration": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/browser-integration-smoke.mjs",
+    "test:shell": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/product-smoke.mjs",
+    "test:review": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/review-smoke.mjs",
+    "test:assistant": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/assistant-smoke.mjs",
+    "typecheck": "tsc --noEmit -p prototypes/shared/assistant/tsconfig.json",
+    "test:trust": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/trust-smoke.mjs"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.3",
     "@playwright/test": "^1.63.0",
-    "@types/node": "^22.19.0",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^5.2.0",
-    "electron": "44.5.1",
-    "electron-vite": "^5.0.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.6"
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "@types/node": "22.20.4"
+  },
+  "dependencies": {
+    "openai": "7.25.0",
+    "@anthropic-ai/sdk": "0.129.0",
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "jose": "6.2.12"
   }
 }

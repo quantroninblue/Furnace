@@ -1,5 +1,4 @@
-# Local architecture draft for private review.
-/architecture.md
+# Private naming notes.
 /name_idea.txt
 node_modules/
 out/
@@ -13,3 +12,17 @@ playwright-report/
 *.log
 .DS_Store
 .agent-workspace/
+
+# Code OSS development: isolated upstream checkout and generated local artifacts.
+/prototypes/code-oss/upstream/
+/prototypes/code-oss/.cache/
+/prototypes/code-oss/.profile/
+
+# Retained original app and migration reference; local only.
+/legacy/
+
+# Internal planning, agent instructions and developer notes stay local.
+# Only user-facing documentation (README.md, DATA_USAGE.md) is published.
+/AGENTS.md
+/PRODUCT_PLAN.md
+/prototypes/**/*.md
