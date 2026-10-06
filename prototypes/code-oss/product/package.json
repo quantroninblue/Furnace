@@ -1,0 +1,109 @@
+{
+  "name": "workspace-product",
+  "displayName": "AI GUI Workspace",
+  "description": "Private foundation comparison: conversations, planning and reviewed edits.",
+  "publisher": "ai-gui",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "vscode": "^1.140.0"
+  },
+  "main": "./extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiGui.home",
+        "title": "AI GUI: Open Workspace"
+      },
+      {
+        "command": "aiGui.connections",
+        "title": "AI GUI: Connections"
+      },
+      {
+        "command": "aiGui.proposeFixture",
+        "title": "AI GUI: Propose Example Edit"
+      },
+      {
+        "command": "aiGui.applyReview",
+        "title": "AI GUI: Apply Reviewed Changes"
+      },
+      {
+        "command": "aiGui.discardReview",
+        "title": "AI GUI: Discard Proposal"
+      },
+      {
+        "command": "aiGui.openResearch",
+        "title": "AI GUI: Open Research"
+      }
+    ],
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "aiGui",
+          "title": "Conversation",
+          "icon": "media/workspace.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiGui": [
+        {
+          "id": "aiGui.conversation",
+          "name": "Conversation",
+          "type": "webview"
+        }
+      ]
+    },
+    "themes": [
+      {
+        "label": "AI GUI Charcoal",
+        "uiTheme": "vs-dark",
+        "path": "./themes/charcoal.json"
+      }
+    ],
+    "configuration": {
+      "title": "AI GUI",
+      "properties": {
+        "aiGui.openOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the product workspace and conversation on startup."
+        },
+        "aiGui.agent.permissions": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "auto",
+            "full"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "Ask before every file change, command and web fetch.",
+            "Apply project edits directly and run commands in the sandbox (project + temp writes, no network); ask for anything else.",
+            "Full access (YOLO): no approvals and no sandbox."
+          ],
+          "description": "How much the agent may do without asking. Changeable from the conversation composer."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "workbench.activityBar.location": "top",
+      "workbench.layoutControl.enabled": false,
+      "workbench.tips.enabled": false,
+      "window.title": "${dirty}${rootName}${separator}AI GUI",
+      "editor.minimap.enabled": false,
+      "editor.renderLineHighlight": "gutter"
+    }
+  },
+  "enabledApiProposals": [
+    "workspaceTrust"
+  ]
+}
