@@ -16,6 +16,10 @@ export async function desktopTest(name) {
     const test = {
         artifacts, profile, workspace, errors,
         async launch(folder, extraArgs = []) {
+            // Tests keep 100% zoom so layout checks and screenshots stay comparable.
+            const settings = path.join(profile, 'user-data/User/settings.json');
+            await mkdir(path.dirname(settings), { recursive: true });
+            await writeFile(settings, JSON.stringify({ 'window.zoomLevel': 0 }), { flag: 'wx' }).catch(error => { if (error.code !== 'EEXIST') throw error; });
             const options = await launchOptions(profile);
             options.args.push('--ozone-platform=x11', ...extraArgs);
             if (folder) options.args.push(folder);

@@ -22,6 +22,7 @@ computer and your keys and sign-ins are never sent to us.
 - [The workspace](#the-workspace)
 - [Working with the agent](#working-with-the-agent)
 - [Research](#research)
+- [Debugging and extensions](#debugging-and-extensions)
 - [Commands and shortcuts](#commands-and-shortcuts)
 - [Tips](#tips)
 - [Troubleshooting](#troubleshooting)
@@ -54,6 +55,7 @@ cd prototypes/code-oss
 node scripts/setup.mjs build-tools
 node scripts/setup.mjs headers electron native transpile
 node scripts/setup.mjs extensions extensions-startup extensions-json extensions-markdown
+node scripts/setup.mjs extensions-debug builtin-extensions
 cd ../..
 
 # 5. Install AI GUI's own dependencies, build and start
@@ -64,6 +66,12 @@ npm start
 
 After the first setup, start AI GUI with `npm run build && npm start` (or just
 `npm start` if nothing changed).
+
+On first launch, a **Getting started** guide on the workspace page walks you
+through connecting a model, opening and trusting a folder, choosing permissions
+and giving the agent its first task. Each step ticks itself off as you go. Skip it
+any time and bring it back with `/tour` or **AI GUI: Getting Started** in the
+command palette (`Ctrl+Shift+P`).
 
 ## Connect a model
 
@@ -161,6 +169,22 @@ Browser**. It opens in a separate, sandboxed window with its own temporary sessi
   source's chip, to include it (up to three at a time).
 - Keyboard: `Ctrl+L` address bar, `Alt+←/→` back and forward, `Ctrl+R` or `F5` reload.
 
+## Debugging and extensions
+
+**JavaScript and TypeScript** debugging is built in (Node.js, plus Chrome and Edge
+if installed). Open a project, then **Run and Debug** in the sidebar, or press
+**F5**. Add a `.vscode/launch.json` for custom setups.
+
+For **other languages** (Python, C/C++, Go, Java, Rust and more), install a debugger
+from the **Extensions** view. AI GUI uses [Open VSX](https://open-vsx.org), the open
+extension registry used by VSCodium; Microsoft's own marketplace isn't available
+to editors built from Code OSS. Search for the language (for example **Python
+Debugger**) and choose **Install**. The first time you install from a publisher,
+you'll be asked whether you trust it.
+
+Extensions run with your user permissions, outside AI GUI's agent sandbox, so
+install only ones you trust.
+
 ## Commands and shortcuts
 
 Type `/` in the message box for the command list:
@@ -175,8 +199,12 @@ Type `/` in the message box for the command list:
 | `/attach` | Import files as context |
 | `/workspace` | Show the workspace page |
 | `/stop` | Stop the current reply or command |
+| `/tour` | Show the Getting started guide again |
+| `/zoom [in\|out\|reset]` | Make all text larger or smaller |
 
 - **Enter** sends; **Shift+Enter** adds a new line.
+- **Text size:** AI GUI starts at 120% zoom. Use **Text size A− / A+** at the top of
+  the workspace page, `/zoom`, or `Ctrl+=` / `Ctrl+-` to adjust it.
 - The **Ask / Run** switch in the message box toggles between talking to the agent
   and running your own commands.
 - Resuming a chat restores its messages, brief, sources and attachments; shared
@@ -206,6 +234,7 @@ Type `/` in the message box for the command list:
 | "Remember securely" is greyed out | Your system has no unlocked keychain; keys last for the current session only. |
 | An Ollama model never uses tools | The model doesn't support tool calling; choose one that does. |
 | Send is disabled | Pick a model in the message box, or open Connections. |
+| Run and Debug says "All debug extensions are disabled" | The built-in debugger wasn't downloaded. Run `node scripts/setup.mjs extensions-debug builtin-extensions` in `prototypes/code-oss`, then restart. |
 
 ## License and notices
 

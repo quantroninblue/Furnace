@@ -13,7 +13,9 @@ where it lives.
   your AI GUI profile, not uploaded anywhere except to the AI provider you are
   chatting with, as part of the conversation.
 - **No telemetry or analytics.** AI GUI collects no usage data, and its launcher
-  turns off the editor's built-in telemetry and update checks.
+  turns off the editor's built-in telemetry and update checks. The only other
+  network use is what you trigger: the Extensions view (Open VSX), the research
+  browser, and web pages the agent fetches.
 
 ## What is sent to AI providers
 
@@ -99,6 +101,9 @@ go to DuckDuckGo. Captured text stays local until you share it with a conversati
 
 ## Extensions
 
-AI GUI is built on Code OSS (the open-source core of Visual Studio Code). Editor
-extensions you install yourself run with your user permissions and follow their own
-data practices.
+AI GUI is built on Code OSS (the open-source core of Visual Studio Code). The
+Extensions view searches and downloads extensions from [Open VSX](https://open-vsx.org)
+(run by the Eclipse Foundation), which sees those requests. The built-in JavaScript
+debugger is downloaded once from its GitHub release during setup and checked against
+a pinned fingerprint. Editor extensions you install yourself run with your user
+permissions and follow their own data practices.

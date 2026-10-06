@@ -6,7 +6,7 @@ import { environment, root, upstream } from './environment.mjs';
 // Explicit stages keep the upstream recursive postinstall and parallel builds out
 // of this laptop-sized comparison. Run only the stages that need refreshing.
 const stages = process.argv.slice(2);
-const allowed = ['build-tools', 'headers', 'electron', 'native', 'transpile', 'extensions', 'extensions-startup', 'extensions-json', 'extensions-markdown'];
+const allowed = ['build-tools', 'headers', 'electron', 'native', 'transpile', 'extensions', 'extensions-startup', 'extensions-json', 'extensions-markdown', 'extensions-debug', 'builtin-extensions'];
 if (!stages.length || stages.some(stage => !allowed.includes(stage))) {
     throw new Error(`Usage: node scripts/setup.mjs <${allowed.join('|')}> [...]`);
 }
@@ -43,7 +43,11 @@ async function run(command, args, cwd = upstream) {
 
 for (const stage of stages) {
     console.log(`Setup stage: ${stage}`);
-    if (stage === 'build-tools') {
+    if (stage === 'builtin-extensions') {
+        // Upstream's own downloader: the JavaScript debugger and companions pinned in
+        // product.json, fetched from their GitHub releases and checked against SHA-256.
+        await run('node', ['build/lib/builtInExtensions.ts']);
+    } else if (stage === 'build-tools') {
         await run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], path.join(upstream, 'build'));
     } else if (stage === 'headers') {
         await run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], path.join(upstream, 'build/npm/gyp'));
@@ -70,11 +74,12 @@ for (const stage of stages) {
         for (const part of ['client', 'server']) {
             await run('node', ['node_modules/@typescript/native/lib/tsc.js', '--project', `extensions/json-language-features/${part}/tsconfig.json`]);
         }
-    } else if (stage === 'extensions' || stage === 'extensions-startup' || stage === 'extensions-markdown') {
+    } else if (stage === 'extensions' || stage === 'extensions-startup' || stage === 'extensions-markdown' || stage === 'extensions-debug') {
         if (stage === 'extensions') await run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], path.join(upstream, 'extensions'));
         const names = stage === 'extensions'
             ? ['configuration-editing', 'merge-conflict', 'git-base', 'git', 'typescript-language-features']
-            : stage === 'extensions-startup' ? ['debug-auto-launch', 'github', 'emmet', 'github-authentication'] : ['extension-editing', 'markdown-language-features'];
+            : stage === 'extensions-startup' ? ['debug-auto-launch', 'github', 'emmet', 'github-authentication']
+            : stage === 'extensions-debug' ? ['debug-server-ready', 'npm'] : ['extension-editing', 'markdown-language-features'];
         for (const name of names) {
             const directory = path.join(upstream, 'extensions', name);
             await run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], directory);
