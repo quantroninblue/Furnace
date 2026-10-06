@@ -20,9 +20,3 @@ playwright-report/
 
 # Retained original app and migration reference; local only.
 /legacy/
-
-# Internal planning, agent instructions and developer notes stay local.
-# Only user-facing documentation (README.md, DATA_USAGE.md) is published.
-/AGENTS.md
-/PRODUCT_PLAN.md
-/prototypes/**/*.md
