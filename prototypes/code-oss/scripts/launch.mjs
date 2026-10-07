@@ -50,11 +50,19 @@ export async function launchOptions(profile = process.env.AI_GUI_CODE_OSS_PROFIL
         'extensions.autoCheckUpdates': false, 'window.commandCenter': false,
         // 120%: readable on dense laptop screens; users change it with Text size or Ctrl+=/-.
         'window.zoomLevel': 1,
+        // Themed dialogs match the charcoal panels. Menus stay native: the drawn (custom) menu
+        // bar dropdowns opened behind the workspace panels on a real Linux desktop, and Linux
+        // only uses native menus with the native title bar.
+        'window.dialogStyle': 'custom', 'window.titleBarStyle': 'native', 'window.menuStyle': 'native',
     };
+    // Earlier product defaults to replace in existing profiles (only if still unchanged).
+    const replaced = { 'window.menuStyle': 'custom' };
     const settingsFile = path.join(settingsDirectory, 'settings.json');
     let settings;
     try { settings = JSON.parse(await readFile(settingsFile, 'utf8')); }
     catch (error) { settings = error.code === 'ENOENT' ? {} : undefined; } // Leave hand-edited JSONC untouched.
+    const stale = settings && typeof settings === 'object' ? Object.keys(replaced).filter(key => settings[key] === replaced[key]) : [];
+    for (const key of stale) delete settings[key];
     if (settings && typeof settings === 'object' && Object.keys(defaults).some(key => !(key in settings))) {
         await writeFile(settingsFile, JSON.stringify({ ...defaults, ...settings }, null, 2));
     }

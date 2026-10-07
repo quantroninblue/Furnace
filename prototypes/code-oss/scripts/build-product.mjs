@@ -13,7 +13,11 @@ await build({ entryPoints: [path.join(root, 'product/assistant/entry.cjs')], out
 await mkdir(path.join(output, 'research'), { recursive: true });
 for (const entry of ['host', 'entry', 'controls-preload']) await build({ entryPoints: [path.join(root, `product/research/${entry}.cjs`)], outfile: path.join(output, `research/${entry}.cjs`), bundle: true, platform: 'node', format: 'cjs', external: ['electron'], sourcemap: true });
 for (const file of ['controls.html', 'controls.css', 'controls.js']) await cp(path.join(root, 'product/research', file), path.join(output, 'research', file));
+await rm(path.join(output, 'media'), { recursive: true, force: true });
 for (const file of ['package.json', 'media', 'themes']) await cp(path.join(root, 'product', file), path.join(output, file), { recursive: true });
+// Conversation panel and workspace page (React), one bundle per webview surface.
+await build({ entryPoints: ['conversation', 'home'].map(name => path.join(root, `product/webview/${name}.tsx`)), outdir: path.join(output, 'media'), bundle: true, platform: 'browser', format: 'iife',
+    target: 'chrome130', jsx: 'automatic', minify: true, sourcemap: true, legalComments: 'linked', define: { 'process.env.NODE_ENV': '"production"' } });
 // Agent command sandbox (Linux): optional; without it Auto mode asks before commands.
 await rm(path.join(output, 'sandbox'), { recursive: true, force: true });
 if (process.platform === 'linux') {

@@ -26,6 +26,10 @@ try {
     await test.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1024, 768));
     await expect(conversation.getByLabel('Conversation draft')).toBeVisible();
     await test.page.screenshot({ path: path.join(test.artifacts, 'compact.png') });
+    // The workspace page is a side bar view: modes never open an editor tab.
+    expect(await test.page.locator('.tabs-container .tab').count()).toBe(0);
+    await expect(test.page.locator('.part.sidebar .composite.title')).toContainText('AI GUI WORKSPACE', { ignoreCase: true });
+    await home.getByRole('tab', { name: 'Start', exact: true }).click();
     await home.getByRole('button', { name: 'Skip tour', exact: true }).click();
     await expect(home.locator('#tour')).toBeHidden();
     await test.close();
@@ -37,7 +41,7 @@ try {
     await expect(home.getByLabel('Planning brief')).toHaveValue('Goal: review changes against unsaved editor state.');
     await expect(home.locator('#tour')).toBeHidden();
     expect(test.errors).toEqual([]);
-    await writeFile(path.join(test.artifacts, 'result.json'), JSON.stringify({ readyMs, checks: ['project-free', 'tour shown on first run', 'modes', 'draft', 'brief', 'compact-layout', 'tour skip persists', 'restart'] }, null, 2));
+    await writeFile(path.join(test.artifacts, 'result.json'), JSON.stringify({ readyMs, checks: ['project-free', 'tour shown on first run', 'modes', 'draft', 'brief', 'compact-layout', 'workspace view in the side bar; no editor tabs opened by modes', 'tour skip persists', 'restart'] }, null, 2));
     console.log('PASS: product shell, modes, planning/draft persistence and compact layout.');
 } catch (error) { failure = error; throw error; }
 finally { await test.finish(failure); }

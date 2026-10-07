@@ -21,7 +21,7 @@ export type Message = {
   role: "user" | "assistant";
   content: string;
   model?: string;
-  kind?: "command" | "workspace";
+  kind?: "command" | "workspace" | "summary";
   exitCode?: number | null;
   activity?: string[];
   proposals?: Proposal[];
@@ -56,8 +56,8 @@ export type AgentStatus = {
   chatgpt?: ChatGPTStatus;
   claude?: ClaudeStatus;
 };
-export type SessionSummary = { id: string; title: string; createdAt: string; updatedAt: string; projectRoot: string | null; model: string; messageCount: number };
-export type Session = Omit<SessionSummary, "messageCount"> & { messages: Message[]; plan: string; sources?: ResearchSource[] };
+export type SessionSummary = { id: string; title: string; createdAt: string; updatedAt: string; projectRoot: string | null; model: string; messageCount: number; snippet?: string };
+export type Session = Omit<SessionSummary, "messageCount" | "snippet"> & { messages: Message[]; plan: string; sources?: ResearchSource[]; customTitle?: string; branchOf?: string };
 export type ChatEvent = {
   id: string;
   delta?: string;
@@ -66,7 +66,10 @@ export type ChatEvent = {
   exitCode?: number | null;
   activity?: string;
   proposal?: Proposal;
+  /** Measured by the provider: input = prompt size of the latest model call, output = tokens it generated. */
+  usage?: { input?: number; output?: number };
 };
+export type ImageInput = { mime: string; data: string };
 export interface WorkspaceAPI {
   claude: {
     login(consoleAccount: boolean): Promise<void>;

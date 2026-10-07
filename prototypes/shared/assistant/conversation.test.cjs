@@ -71,7 +71,7 @@ test('agent approvals wait for the user, honour "always" for the chat and are de
         }
     }, { permission: () => 'ask', toolHost: () => host });
     chat.session.update('mode', 'Build');
-    const waiting = () => chat.data.messages.at(-1).steps?.find(step => step.status === 'waiting');
+    const waiting = () => chat.data.messages.at(-1)?.steps?.find(step => step.status === 'waiting');
     const until = async check => { for (let i = 0; i < 200 && !check(); i++) await new Promise(r => setTimeout(r, 10)); assert.ok(check()); };
     let turn = chat.send('one two three');
     await until(waiting); chat.decide(waiting().id, 'approve');
@@ -88,4 +88,44 @@ test('agent approvals wait for the user, honour "always" for the chat and are de
     assert.equal(chat.data.messages.at(-1).state, 'stopped');
     await assert.rejects(fs.stat(path.join(root, 'five')));
     assert.equal(chat.approvals.size, 0);
+});
+
+test('each reply checkpoints its file changes; files revert per reply and rewind restores files and history', async t => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'checkpoint-chat-'))); t.after(() => fs.rm(root, { recursive: true, force: true }));
+    await fs.writeFile(path.join(root, 'app.txt'), 'original\n');
+    const host = { root, trusted: true, sandbox: null,
+        read: async file => fs.readFile(file, 'utf8'), kind: async file => { try { return (await fs.stat(file)).isDirectory() ? 'directory' : 'file'; } catch { return null; } },
+        list: async dir => (await fs.readdir(dir, { withFileTypes: true })).map(entry => ({ name: entry.name, directory: entry.isDirectory() })),
+        write: async (file, text) => { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, text); return ''; },
+        remove: (file, recursive) => fs.rm(file, { recursive }), move: (from, to) => fs.rename(from, to), mkdir: dir => fs.mkdir(dir, { recursive: true }) };
+    const chat = await fixture(t, async (request, tools) => {
+        const [file, text] = request.messages.at(-1).content.split('=');
+        await tools.execute('read_file', { path: file, offset: null, limit: null }).catch(() => {});
+        await tools.execute('write_file', { path: file, content: text + '\n' });
+    }, { root: () => root, permission: () => 'auto', toolHost: () => host });
+    chat.session.update('mode', 'Build');
+    await chat.send('notes.txt=first');
+    await chat.send('notes.txt=second');
+    await chat.send('extra.txt=third');
+    const replies = chat.data.messages.filter(item => item.role === 'assistant');
+    assert.deepEqual(replies.map(item => item.changes.files.map(file => `${file.status} ${file.path}`)), [['added notes.txt'], ['modified notes.txt'], ['added extra.txt']]);
+    assert.ok(replies.every(item => item.endedAt >= item.startedAt));
+    // The user edits a file the agent wrote: reverting it needs explicit confirmation.
+    await fs.writeFile(path.join(root, 'extra.txt'), 'user change\n');
+    await assert.rejects(chat.revert(replies[2].id), error => error.conflicts?.[0] === 'extra.txt');
+    assert.equal(await fs.readFile(path.join(root, 'extra.txt'), 'utf8'), 'user change\n');
+    await chat.revert(replies[2].id, null, true);
+    await assert.rejects(fs.stat(path.join(root, 'extra.txt')));
+    assert.equal(chat.data.messages.find(item => item.id === replies[2].id).changes.files[0].reverted, true);
+    assert.match(chat.data.messages.at(-1).content, /User reverted 1 file/);
+    // Rewinding to the second request restores notes.txt to the first reply's content.
+    const second = chat.data.messages.find(item => item.content === 'notes.txt=second');
+    await chat.rewind(second.id);
+    assert.equal(await fs.readFile(path.join(root, 'notes.txt'), 'utf8'), 'first\n');
+    assert.equal(chat.data.messages.at(-1).id, replies[0].id);
+    assert.equal(chat.session.state.draft, 'notes.txt=second');
+    await chat.rewind(chat.data.messages[0].id);
+    await assert.rejects(fs.stat(path.join(root, 'notes.txt')));
+    assert.equal(chat.data.messages.length, 0);
+    assert.equal(await fs.readFile(path.join(root, 'app.txt'), 'utf8'), 'original\n');
 });

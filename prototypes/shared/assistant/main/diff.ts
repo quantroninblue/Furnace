@@ -43,11 +43,13 @@ export function unifiedDiff(file: string, before: string, after: string, context
   return lines.join("\n");
 }
 
+// A final newline ends the last line; it does not start another one.
+const lines = (text: string) => (text ? text.replace(/\n$/, "").split("\n") : []);
 export function diffStats(before: string, after: string) {
   const a = new Map<string, number>();
-  for (const line of before ? before.split("\n") : []) a.set(line, (a.get(line) ?? 0) + 1);
+  for (const line of lines(before)) a.set(line, (a.get(line) ?? 0) + 1);
   let added = 0;
-  for (const line of after ? after.split("\n") : []) { const n = a.get(line) ?? 0; if (n) a.set(line, n - 1); else added++; }
+  for (const line of lines(after)) { const n = a.get(line) ?? 0; if (n) a.set(line, n - 1); else added++; }
   let removed = 0; for (const n of a.values()) removed += n;
   return { added, removed };
 }

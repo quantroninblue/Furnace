@@ -5,7 +5,7 @@ import path from 'node:path';
 import { root } from './environment.mjs';
 import { launchOptions } from './launch.mjs';
 
-export async function desktopTest(name) {
+export async function desktopTest(name, { discover = false } = {}) {
     await mkdir(path.join(root, '.cache', name), { recursive: true });
     const artifacts = await mkdtemp(path.join(root, '.cache', name, 'run-'));
     const profile = path.join(artifacts, 'profile');
@@ -21,6 +21,7 @@ export async function desktopTest(name) {
             await mkdir(path.dirname(settings), { recursive: true });
             await writeFile(settings, JSON.stringify({ 'window.zoomLevel': 0 }), { flag: 'wx' }).catch(error => { if (error.code !== 'EEXIST') throw error; });
             const options = await launchOptions(profile);
+            if (!discover) options.env.AI_GUI_TEST_NO_DISCOVERY = '1';
             options.args.push('--ozone-platform=x11', ...extraArgs);
             if (folder) options.args.push(folder);
             const start = Date.now();

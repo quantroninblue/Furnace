@@ -42,9 +42,11 @@ class ResearchTransport extends EventEmitter {
         this.child.once('error', () => this.fail('Research host could not start'));
         // Chromium descendants can briefly retain inherited descriptors. Reject
         // on main-process exit, without waiting for every pipe to reach EOF.
-        this.child.once('exit', () => this.fail('Research host exited'));
+        // Lifecycle timestamps help diagnose a companion that does not go away.
+        this.lifecycle = { spawned: Date.now() };
+        this.child.once('exit', (code, signal) => { this.lifecycle.exit = { at: Date.now(), code, signal }; this.fail('Research host exited'); });
         this.child.once('close', () => {
-            this.fail('Research host exited'); clearTimeout(this.killTimer);
+            this.lifecycle.close = Date.now(); this.fail('Research host exited'); clearTimeout(this.killTimer);
             rmSync(this.profile, { recursive: true, force: true }); this.resolveExit();
         });
         this.pipe.on('error', () => this.fail('Research transport closed'));
@@ -101,7 +103,8 @@ class ResearchTransport extends EventEmitter {
                 else this.child.kill(signal);
             } catch { /* Already exited. */ }
         };
-        kill('SIGTERM'); this.killTimer = setTimeout(() => kill('SIGKILL'), 1000);
+        this.lifecycle.failed = { at: Date.now(), message };
+        kill('SIGTERM'); this.killTimer = setTimeout(() => { this.lifecycle.forced = Date.now(); kill('SIGKILL'); }, 1000);
         this.killTimer.unref();
         this.emit('closed', message);
     }

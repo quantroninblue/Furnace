@@ -6,6 +6,7 @@ const { ChatGPTAuth } = require('./main/chatgpt-auth.ts');
 const remote = require('./main/remote-models.ts');
 const ollama = require('./main/ollama.ts');
 const claude = require('./main/claude-code.ts');
+const { validImages } = require('./main/agent-context.ts');
 class ProviderService {
     constructor({ directory, cipher, openBrowser, emit = () => {}, dependencies = {} }) {
         this.directory = directory; this.emit = emit;
@@ -61,7 +62,7 @@ class ProviderService {
         if (!this.catalog.has(request.model)) throw new Error('Choose an available model in Connections; refresh to reconnect.');
         if (!request || !['discuss', 'plan', 'build', 'research'].includes(request.mode) || !Array.isArray(request.messages)
             || request.messages.some(m => !['user', 'assistant'].includes(m.role) || typeof m.content !== 'string') || typeof request.context !== 'string'
-            || (request.permission !== undefined && !['ask', 'auto', 'full'].includes(request.permission)) || (request.environment !== undefined && (typeof request.environment !== 'string' || request.environment.length > 1000))) throw new Error('Invalid assistant request.');
+            || (request.permission !== undefined && !['ask', 'auto', 'full'].includes(request.permission)) || (request.environment !== undefined && (typeof request.environment !== 'string' || request.environment.length > 1000)) || (request.images !== undefined && !validImages(request.images))) throw new Error('Invalid assistant request.');
         this.active = true;
         const slash = request.model.indexOf('/'); const provider = request.model.slice(0, slash);
         request = { ...request, model: request.model.slice(slash + 1) };

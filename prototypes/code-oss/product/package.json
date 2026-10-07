@@ -46,6 +46,72 @@
       {
         "command": "aiGui.openResearch",
         "title": "AI GUI: Open Research"
+      },
+      {
+        "command": "aiGui.focusConversation",
+        "title": "AI GUI: Focus Conversation",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "aiGui.newChat",
+        "title": "AI GUI: New Chat"
+      },
+      {
+        "command": "aiGui.history",
+        "title": "AI GUI: Chat History"
+      },
+      {
+        "command": "aiGui.nextMode",
+        "title": "AI GUI: Next Mode (Discuss, Plan, Build, Research)"
+      },
+      {
+        "command": "aiGui.stop",
+        "title": "AI GUI: Stop Reply"
+      },
+      {
+        "command": "aiGui.approve",
+        "title": "AI GUI: Approve Pending Action"
+      },
+      {
+        "command": "aiGui.deny",
+        "title": "AI GUI: Deny Pending Action"
+      },
+      {
+        "command": "aiGui.compact",
+        "title": "AI GUI: Condense Conversation Now"
+      },
+      {
+        "command": "aiGui.copyDiagnostics",
+        "title": "AI GUI: Copy Diagnostics for a Bug Report"
+      },
+      {
+        "command": "aiGui.showLog",
+        "title": "AI GUI: Show Log"
+      },
+      {
+        "command": "aiGui.scm.open",
+        "title": "Show Agent Changes",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "aiGui.scm.revert",
+        "title": "Revert Agent Changes",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "aiGui.scm.stage",
+        "title": "Stage in Git",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aiGui.scm.stageAll",
+        "title": "Stage All Agent Changes in Git",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aiGui.scm.reviewAll",
+        "title": "Review All Agent Changes",
+        "icon": "$(diff-multiple)"
       }
     ],
     "viewsContainers": {
@@ -55,6 +121,13 @@
           "title": "Conversation",
           "icon": "media/workspace.svg"
         }
+      ],
+      "activitybar": [
+        {
+          "id": "aiGuiWorkspace",
+          "title": "AI GUI Workspace",
+          "icon": "media/workspace.svg"
+        }
       ]
     },
     "views": {
@@ -62,6 +135,13 @@
         {
           "id": "aiGui.conversation",
           "name": "Conversation",
+          "type": "webview"
+        }
+      ],
+      "aiGuiWorkspace": [
+        {
+          "id": "aiGui.workspace",
+          "name": "Workspace",
           "type": "webview"
         }
       ]
@@ -95,6 +175,11 @@
             "Full access (YOLO): no approvals and no sandbox."
           ],
           "description": "How much the agent may do without asking. Changeable from the conversation composer."
+        },
+        "aiGui.agent.showCommandsInTerminal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the agent's commands and background processes live in IDE terminals (Ctrl+C there interrupts them)."
         }
       }
     },
@@ -105,7 +190,109 @@
       "window.title": "${dirty}${rootName}${separator}AI GUI",
       "editor.minimap.enabled": false,
       "editor.renderLineHighlight": "gutter"
-    }
+    },
+    "menus": {
+      "scm/resourceState/context": [
+        {
+          "command": "aiGui.scm.revert",
+          "when": "scmProvider == aiGui && scmResourceState == revertible",
+          "group": "inline"
+        },
+        {
+          "command": "aiGui.scm.stage",
+          "when": "scmProvider == aiGui",
+          "group": "inline"
+        },
+        {
+          "command": "aiGui.scm.revert",
+          "when": "scmProvider == aiGui && scmResourceState == revertible",
+          "group": "1_modification"
+        },
+        {
+          "command": "aiGui.scm.stage",
+          "when": "scmProvider == aiGui",
+          "group": "1_modification"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "aiGui.scm.reviewAll",
+          "when": "scmProvider == aiGui",
+          "group": "inline"
+        },
+        {
+          "command": "aiGui.scm.stageAll",
+          "when": "scmProvider == aiGui",
+          "group": "inline"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "aiGui.focusConversation",
+          "when": "scmProvider == aiGui",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "aiGui.scm.open",
+          "when": "false"
+        },
+        {
+          "command": "aiGui.scm.revert",
+          "when": "false"
+        },
+        {
+          "command": "aiGui.scm.stage",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "aiGui.focusConversation",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i"
+      },
+      {
+        "command": "aiGui.newChat",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n"
+      },
+      {
+        "command": "aiGui.history",
+        "key": "ctrl+alt+h",
+        "mac": "cmd+alt+h"
+      },
+      {
+        "command": "aiGui.nextMode",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m"
+      },
+      {
+        "command": "aiGui.home",
+        "key": "ctrl+alt+w",
+        "mac": "cmd+alt+w"
+      },
+      {
+        "command": "aiGui.stop",
+        "key": "ctrl+alt+.",
+        "mac": "cmd+alt+.",
+        "when": "aiGui.busy"
+      },
+      {
+        "command": "aiGui.approve",
+        "key": "ctrl+alt+enter",
+        "mac": "cmd+alt+enter",
+        "when": "aiGui.approvalPending && !findWidgetVisible"
+      },
+      {
+        "command": "aiGui.deny",
+        "key": "ctrl+alt+backspace",
+        "mac": "cmd+alt+backspace",
+        "when": "aiGui.approvalPending"
+      }
+    ]
   },
   "enabledApiProposals": [
     "workspaceTrust"
