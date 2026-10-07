@@ -9,14 +9,18 @@ exports.startAssistantService = (options = {}) => {
 const directory = options.directory || process.argv[process.argv.indexOf('--assistant-service') + 1];
 if (!directory || !path.isAbsolute(directory)) app.exit(1);
 app.setPath('userData', directory); app.enableSandbox();
-let service, active, operation, quitting = false;
+// Replies run concurrently (a chat plus background tasks), each stoppable by its request ID.
+let service, quitting = false;
+const active = new Map(), operations = new Set();
 const rpc = new PrivateRPC(new Socket({ fd: 3, readable: true, writable: true }), async (name, value) => {
     await ready;
     if (name === 'status') return service.snapshot();
-    if (name === 'stop') { active?.abort(); return; }
+    if (name === 'stop') { for (const [id, controller] of active) if (!value?.id || value.id === id) controller.abort(); return; }
     if (name === 'connection') return service.change(value.action, value);
-    if (name !== 'run' || active) throw new Error('Unsupported or busy assistant operation.');
-    const controller = new AbortController(); active = controller;
+    if (name === 'count') return service.count(value.request, value.definitions);
+    if (name === 'spend') return service.spend();
+    if (name !== 'run' || typeof value?.request?.id !== 'string' || active.has(value.request.id)) throw new Error('Unsupported or busy assistant operation.');
+    const controller = new AbortController(); active.set(value.request.id, controller);
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(2 * 60 * 60 * 1000)]);
     const tools = { definitions: value.definitions, execute: async (name, args) => {
         signal.throwIfAborted();
@@ -24,13 +28,14 @@ const rpc = new PrivateRPC(new Socket({ fd: 3, readable: true, writable: true })
         // Tools may wait on user approval or long commands; Stop/turn timeout still apply.
         return rpc.request('tool', { turn: value.request.id, name, args }, 2 * 60 * 60 * 1000);
     } };
-    operation = service.run(value.request, tools, signal);
-    try { await operation; } finally { if (active === controller) active = undefined; }
+    const operation = service.run(value.request, tools, signal);
+    operations.add(operation);
+    try { await operation; } finally { active.delete(value.request.id); operations.delete(operation); }
 });
 async function shutdown() {
-    if (quitting) return; quitting = true; active?.abort(); service?.dispose();
+    if (quitting) return; quitting = true; for (const controller of active.values()) controller.abort(); service?.dispose();
     const timer = setTimeout(() => app.exit(0), 1500);
-    try { await operation; } catch { /* Cancellation is expected. */ }
+    await Promise.allSettled([...operations]);
     clearTimeout(timer); rpc.close(); app.exit(0);
 }
 rpc.on('closed', shutdown); process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);

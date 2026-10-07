@@ -39,10 +39,15 @@ test("modes expose the right tools; hallucinated tools and untrusted projects ar
   assert.ok(plan.includes("read_file") && plan.includes("plan_propose") && !plan.includes("edit_file") && !plan.includes("run_command"));
   const full = createAgentTools("build", nodeHost("/tmp"), testContext()).definitions.map(tool => tool.function.name);
   for (const name of ["read_file", "glob", "grep", "write_file", "edit_file", "apply_patch", "delete_path", "move_path", "create_directory", "run_command", "web_fetch", "todo_write"]) assert.ok(full.includes(name), name);
-  // Background-process tools appear only when the host can keep processes.
-  assert.deepEqual(toolNames("build").filter(name => !full.includes(name)), ["process_output", "process_stop", "process_list"]);
-  const withProcesses = createAgentTools("build", nodeHost("/tmp"), { ...testContext(), processes: {} as any }).definitions.map(tool => tool.function.name);
-  assert.deepEqual(toolNames("build").filter(name => !withProcesses.includes(name)), []);
+  // Code intelligence needs the IDE's language servers, background-process tools a process host,
+  // and verify_step the planning brief.
+  const code = ["find_definition", "find_references", "find_symbols", "file_outline", "get_problems", "rename_symbol"];
+  assert.deepEqual(toolNames("build").filter(name => !full.includes(name)).sort(), [...code, "verify_step", "process_output", "process_stop", "process_list"].sort());
+  const verify = { brief: () => "", record: () => {}, confirm: () => {} };
+  const withAll = createAgentTools("build", { ...nodeHost("/tmp"), code: {} as any }, { ...testContext(), processes: {} as any }, { verify }).definitions.map(tool => tool.function.name);
+  assert.deepEqual(toolNames("build").filter(name => !withAll.includes(name)), []);
+  const planCode = createAgentTools("plan", { ...nodeHost("/tmp"), code: {} as any }, testContext(), { propose: () => {} }).definitions.map(tool => tool.function.name);
+  assert.ok(planCode.includes("find_references") && !planCode.includes("rename_symbol") && !planCode.includes("verify_step"));
   await assert.rejects(createAgentTools("plan", nodeHost("/tmp"), testContext()).execute("edit_file", {}), /not available in plan mode/);
   const untrusted = createAgentTools("build", nodeHost("/tmp", null, false), testContext());
   assert.ok(!untrusted.definitions.some(tool => tool.function.name === "read_file"));

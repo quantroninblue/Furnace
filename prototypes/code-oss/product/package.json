@@ -112,6 +112,54 @@
         "command": "aiGui.scm.reviewAll",
         "title": "Review All Agent Changes",
         "icon": "$(diff-multiple)"
+      },
+      {
+        "command": "aiGui.inlineEdit",
+        "title": "AI GUI: Inline Edit Selection"
+      },
+      {
+        "command": "aiGui.inlineEdit.accept",
+        "title": "AI GUI: Accept Inline Edit"
+      },
+      {
+        "command": "aiGui.inlineEdit.reject",
+        "title": "AI GUI: Reject Inline Edit"
+      },
+      {
+        "command": "aiGui.inlineEdit.cancel",
+        "title": "AI GUI: Cancel Inline Edit"
+      },
+      {
+        "command": "aiGui.inlineEdit.diff",
+        "title": "AI GUI: Show Inline Edit Diff"
+      },
+      {
+        "command": "aiGui.agentHunk.keep",
+        "title": "AI GUI: Keep Agent Change"
+      },
+      {
+        "command": "aiGui.agentHunk.revert",
+        "title": "AI GUI: Revert Agent Change"
+      },
+      {
+        "command": "aiGui.background.start",
+        "title": "AI GUI: Start Background Task"
+      },
+      {
+        "command": "aiGui.timeline",
+        "title": "AI GUI: Conversation Timeline"
+      },
+      {
+        "command": "aiGui.reviewLastChanges",
+        "title": "AI GUI: Second Opinion on Last Changes"
+      },
+      {
+        "command": "aiGui.sendFeedback",
+        "title": "AI GUI: Send Feedback"
+      },
+      {
+        "command": "aiGui.checkForUpdates",
+        "title": "AI GUI: Check for Updates"
       }
     ],
     "viewsContainers": {
@@ -180,6 +228,48 @@
           "type": "boolean",
           "default": true,
           "description": "Show the agent's commands and background processes live in IDE terminals (Ctrl+C there interrupts them)."
+        },
+        "aiGui.review.automatic": {
+          "type": "boolean",
+          "default": false,
+          "description": "After each Build reply that changes files, a second model reviews the changes and its notes appear under the changed files (costs an extra request)."
+        },
+        "aiGui.review.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model that reviews changes (an id such as anthropic/claude-sonnet-5-5). Empty: the model that made the changes."
+        },
+        "aiGui.budget.monthlyUsd": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Monthly API spend (US dollars) that AI GUI warns about, counted from replies made with API keys on this machine. 0: no warning."
+        },
+        "aiGui.pricing": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "input": {
+                "type": "number"
+              },
+              "output": {
+                "type": "number"
+              }
+            }
+          },
+          "description": "Price overrides in US dollars per million tokens, keyed by model id, for example {\"openai/gpt-5\": {\"input\": 1.25, \"output\": 10}}."
+        },
+        "aiGui.updates.check": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check once a day whether a newer AI GUI is available (only when this build names an update feed). Nothing else is sent."
+        },
+        "aiGui.support.developerTools": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show Toggle Developer Tools and Process Explorer in release builds (for troubleshooting). Takes effect after a restart."
         }
       }
     },
@@ -245,6 +335,37 @@
         {
           "command": "aiGui.scm.stage",
           "when": "false"
+        },
+        {
+          "command": "aiGui.inlineEdit.accept",
+          "when": "aiGui.inlineEditPending"
+        },
+        {
+          "command": "aiGui.inlineEdit.reject",
+          "when": "aiGui.inlineEditPending"
+        },
+        {
+          "command": "aiGui.inlineEdit.diff",
+          "when": "aiGui.inlineEditPending"
+        },
+        {
+          "command": "aiGui.inlineEdit.cancel",
+          "when": "aiGui.inlineEditRunning"
+        },
+        {
+          "command": "aiGui.agentHunk.keep",
+          "when": "false"
+        },
+        {
+          "command": "aiGui.agentHunk.revert",
+          "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "aiGui.inlineEdit",
+          "when": "editorTextFocus && !editorReadonly",
+          "group": "1_modification@0"
         }
       ]
     },
@@ -291,10 +412,109 @@
         "key": "ctrl+alt+backspace",
         "mac": "cmd+alt+backspace",
         "when": "aiGui.approvalPending"
+      },
+      {
+        "command": "aiGui.inlineEdit",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorTextFocus && !editorReadonly && !aiGui.inlineEditPending"
+      },
+      {
+        "command": "aiGui.inlineEdit.accept",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && aiGui.inlineEditPending"
+      },
+      {
+        "command": "aiGui.inlineEdit.reject",
+        "key": "escape",
+        "when": "editorTextFocus && aiGui.inlineEditPending && !suggestWidgetVisible && !inlineSuggestionVisible && !findWidgetVisible"
+      },
+      {
+        "command": "aiGui.inlineEdit.cancel",
+        "key": "escape",
+        "when": "aiGui.inlineEditRunning"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "aiGui.start",
+        "title": "Get Started with AI GUI",
+        "description": "Connect a model, open a project and run a first reviewed task.",
+        "steps": [
+          {
+            "id": "connect",
+            "title": "Connect a model",
+            "description": "Use your ChatGPT plan, Claude Code, an API key or a local Ollama model. Nothing switches accounts or billing on its own.\n[Open Connections](command:aiGui.connections)",
+            "media": {
+              "markdown": "media/walkthrough/connect.md"
+            },
+            "completionEvents": [
+              "onCommand:aiGui.connections"
+            ]
+          },
+          {
+            "id": "project",
+            "title": "Open a project",
+            "description": "The agent works inside the folder you open and trust.\n[Open Folder](command:workbench.action.files.openFolder)",
+            "media": {
+              "markdown": "media/walkthrough/project.md"
+            },
+            "completionEvents": [
+              "onCommand:workbench.action.files.openFolder",
+              "onContext:workspaceFolderCount > 0"
+            ]
+          },
+          {
+            "id": "permissions",
+            "title": "Choose what the agent may do",
+            "description": "Ask first, Auto (sandboxed commands) or Full access, from the box under the message field.\n[Focus the Conversation](command:aiGui.focusConversation)",
+            "media": {
+              "markdown": "media/walkthrough/permissions.md"
+            }
+          },
+          {
+            "id": "task",
+            "title": "Run a first task",
+            "description": "Pick the Build page, describe a small change, and watch each step and diff.\n[Open the Workspace](command:aiGui.home)",
+            "media": {
+              "markdown": "media/walkthrough/task.md"
+            },
+            "completionEvents": [
+              "onCommand:aiGui.home"
+            ]
+          },
+          {
+            "id": "review",
+            "title": "Review, revert or rewind",
+            "description": "Every reply lists the files it changed. Review diffs, keep or revert blocks in the editor, ask a second model for an opinion, or rewind from the timeline.\n[Open the Timeline](command:aiGui.timeline)",
+            "media": {
+              "markdown": "media/walkthrough/review.md"
+            },
+            "completionEvents": [
+              "onCommand:aiGui.timeline"
+            ]
+          },
+          {
+            "id": "privacy",
+            "title": "Your data stays yours",
+            "description": "No AI GUI account and no telemetry. Conversations, rules and the activity log stay on this device; only what you send goes to the model you chose.",
+            "media": {
+              "markdown": "media/walkthrough/privacy.md"
+            }
+          }
+        ]
       }
     ]
   },
   "enabledApiProposals": [
     "workspaceTrust"
-  ]
+  ],
+  "support": {
+    "issues": "",
+    "email": ""
+  },
+  "updates": {
+    "feed": ""
+  }
 }

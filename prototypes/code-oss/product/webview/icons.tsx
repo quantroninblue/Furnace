@@ -32,6 +32,9 @@ const paths = {
   close: <path d="M6 6l12 12M18 6 6 18" />,
   git: <><circle cx="6" cy="6" r="2" /><circle cx="6" cy="18" r="2" /><circle cx="18" cy="12" r="2" /><path d="M6 8v8M8 6h4a4 4 0 0 1 4 4" /></>,
   list: <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
+  timeline: <><circle cx="12" cy="12" r="3" /><path d="M12 3v6M12 15v6" /></>,
+  check: <path d="m5 12 5 5 9-10" />,
+  play: <path d="M7 5v14l11-7z" />,
   at: <><circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" /></>,
 };
 export type IconName = keyof typeof paths;

@@ -27,6 +27,8 @@ export class AuditLog {
     this.queue = next.catch(() => {});
     return next;
   }
+  /** Resolves when pending writes are done. */
+  async idle(): Promise<void> { await this.queue; }
   /** Newest entries first. */
   async read(root: string | null, limit = 300): Promise<AuditEntry[]> {
     await this.queue;

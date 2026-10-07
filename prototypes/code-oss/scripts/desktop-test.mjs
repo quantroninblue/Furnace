@@ -1,11 +1,15 @@
 import { _electron as electron } from '../../../node_modules/playwright-core/index.mjs';
 import { expect } from '../../../node_modules/@playwright/test/index.mjs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { root } from './environment.mjs';
 import { launchOptions } from './launch.mjs';
 
 export async function desktopTest(name, { discover = false } = {}) {
+    // Desktop suites load .cache/product, so build it first: a stale bundle once made a suite
+    // test old code. AI_GUI_TEST_SKIP_BUILD=1 reuses the existing build.
+    if (!process.env.AI_GUI_TEST_SKIP_BUILD) execFileSync(process.execPath, [path.join(root, 'scripts/build-product.mjs')], { stdio: 'inherit' });
     await mkdir(path.join(root, '.cache', name), { recursive: true });
     const artifacts = await mkdtemp(path.join(root, '.cache', name, 'run-'));
     const profile = path.join(artifacts, 'profile');

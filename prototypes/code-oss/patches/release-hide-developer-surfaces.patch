@@ -1,0 +1,85 @@
+diff --git a/src/vs/workbench/contrib/processExplorer/browser/processExplorer.contribution.ts b/src/vs/workbench/contrib/processExplorer/browser/processExplorer.contribution.ts
+index cab57086..5d89133b 100644
+--- a/src/vs/workbench/contrib/processExplorer/browser/processExplorer.contribution.ts
++++ b/src/vs/workbench/contrib/processExplorer/browser/processExplorer.contribution.ts
+@@ -81,6 +81,8 @@ Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEdit
+ //#region --- process explorer commands
+ 
+ const supported = ContextKeyExpr.or(IsWebContext.negate(), RemoteNameContext.notEqualsTo('')); // only on desktop or in web with a remote
++// AI GUI release builds: only in development or with aiGui.support.developerTools.
++const developerSurfaces = ContextKeyExpr.or(ContextKeyExpr.equals('isDevelopment', true), ContextKeyExpr.equals('config.aiGui.support.developerTools', true));
+ 
+ interface IProcessExplorerWindowState {
+ 	readonly bounds: Partial<IRectangle>;
+@@ -98,7 +100,7 @@ class OpenProcessExplorer extends Action2 {
+ 			id: OpenProcessExplorer.ID,
+ 			title: localize2('openProcessExplorer', 'Open Process Explorer'),
+ 			category: Categories.Developer,
+-			precondition: supported,
++			precondition: ContextKeyExpr.and(supported, developerSurfaces),
+ 			f1: true
+ 		});
+ 	}
+@@ -166,7 +168,7 @@ MenuRegistry.appendMenuItem(MenuId.MenubarHelpMenu, {
+ 		id: OpenProcessExplorer.ID,
+ 		title: localize({ key: 'miOpenProcessExplorerer', comment: ['&& denotes a mnemonic'] }, "Open &&Process Explorer")
+ 	},
+-	when: supported,
++	when: ContextKeyExpr.and(supported, developerSurfaces),
+ 	order: 2
+ });
+ 
+diff --git a/src/vs/workbench/contrib/welcomeWalkthrough/browser/walkThrough.contribution.ts b/src/vs/workbench/contrib/welcomeWalkthrough/browser/walkThrough.contribution.ts
+index 1a1f1e1d..fc24c2ff 100644
+--- a/src/vs/workbench/contrib/welcomeWalkthrough/browser/walkThrough.contribution.ts
++++ b/src/vs/workbench/contrib/welcomeWalkthrough/browser/walkThrough.contribution.ts
+@@ -13,6 +13,7 @@ import { Registry } from '../../../../platform/registry/common/platform.js';
+ import { EditorExtensions, IEditorFactoryRegistry } from '../../../common/editor.js';
+ import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
+ import { MenuRegistry, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
++import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+ import { registerWorkbenchContribution2 } from '../../../common/contributions.js';
+ import { IEditorPaneRegistry, EditorPaneDescriptor } from '../../../browser/editor.js';
+ import { KeybindingsRegistry } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
+@@ -45,5 +46,7 @@ MenuRegistry.appendMenuItem(MenuId.MenubarHelpMenu, {
+ 		id: 'workbench.action.showInteractivePlayground',
+ 		title: localize({ key: 'miPlayground', comment: ['&& denotes a mnemonic'] }, "Editor Playgrou&&nd")
+ 	},
+-	order: 3
++	order: 3,
++	// AI GUI release builds: VS Code's editor tutorial only in development.
++	when: ContextKeyExpr.or(ContextKeyExpr.equals('isDevelopment', true), ContextKeyExpr.equals('config.aiGui.support.developerTools', true))
+ });
+diff --git a/src/vs/workbench/electron-browser/actions/developerActions.ts b/src/vs/workbench/electron-browser/actions/developerActions.ts
+index d9294805..7af96308 100644
+--- a/src/vs/workbench/electron-browser/actions/developerActions.ts
++++ b/src/vs/workbench/electron-browser/actions/developerActions.ts
+@@ -12,6 +12,10 @@ import { ServicesAccessor } from '../../../platform/instantiation/common/instant
+ import { IWorkbenchEnvironmentService } from '../../services/environment/common/environmentService.js';
+ import { KeybindingWeight } from '../../../platform/keybinding/common/keybindingsRegistry.js';
+ import { IsDevelopmentContext } from '../../../platform/contextkey/common/contextkeys.js';
++import { ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
++
++// AI GUI release builds: developer surfaces only in development or with aiGui.support.developerTools.
++const DeveloperSurfaces = ContextKeyExpr.or(IsDevelopmentContext, ContextKeyExpr.equals('config.aiGui.support.developerTools', true));
+ import { KeyCode, KeyMod } from '../../../base/common/keyCodes.js';
+ import { INativeWorkbenchEnvironmentService } from '../../services/environment/electron-browser/environmentService.js';
+ import { URI } from '../../../base/common/uri.js';
+@@ -27,6 +31,7 @@ export class ToggleDevToolsAction extends Action2 {
+ 			id: 'workbench.action.toggleDevTools',
+ 			title: localize2('toggleDevTools', 'Toggle Developer Tools'),
+ 			category: Categories.Developer,
++			precondition: DeveloperSurfaces,
+ 			f1: true,
+ 			keybinding: {
+ 				weight: KeybindingWeight.WorkbenchContrib + 50,
+@@ -37,7 +42,8 @@ export class ToggleDevToolsAction extends Action2 {
+ 			menu: {
+ 				id: MenuId.MenubarHelpMenu,
+ 				group: '5_tools',
+-				order: 1
++				order: 1,
++				when: DeveloperSurfaces
+ 			}
+ 		});
+ 	}

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { remoteChat, remoteModels, chatgptModels } from "../main/remote-models";
+import { remoteChat, remoteModels, chatgptModels, readLimits, organizationSpend } from "../main/remote-models";
 import { createAgentTools } from "../main/agent-tools";
 import { testContext } from "./tool-context";
 import type { ChatEvent } from "../shared/types";
@@ -110,4 +110,26 @@ test("ChatGPT limit failures and unknown namespaces never execute tools or retry
   await assert.rejects(remoteChat("openai", "oauth-fixture", request, new AbortController().signal, () => {}, tools, async () => openAIStream([{ id: "fc", type: "function_call", namespace: "untrusted", call_id: "call", name: "plan_read", arguments: "{}" }]), { chatgpt: true }), /unknown tool namespace/);
   assert.equal(executed, false);
   await assert.rejects(chatgptModels("oauth-fixture", async () => Response.json({ detail: "private-details" }, { status: 403 })), error => /policy/.test(String(error)) && !String(error).includes("private-details"));
+});
+
+test("rate-limit and ChatGPT plan headers are read; organization spend sums both providers' cost reports", async () => {
+  assert.equal(readLimits(new Headers({ "content-type": "text/plain" })), null);
+  assert.deepEqual(readLimits(new Headers({ "x-ratelimit-limit-tokens": "30000", "x-ratelimit-remaining-tokens": "28500", "x-ratelimit-reset-tokens": "3s" })), { tokens: { limit: 30000, remaining: 28500, reset: "3s" } });
+  assert.deepEqual(readLimits(new Headers({ "anthropic-ratelimit-requests-limit": "50", "anthropic-ratelimit-requests-remaining": "49" })), { requests: { limit: 50, remaining: 49, reset: undefined } });
+  assert.deepEqual(readLimits(new Headers({ "x-codex-primary-used-percent": "42", "x-codex-primary-window-minutes": "300", "x-codex-secondary-used-percent": "7" }))!.plan,
+    [{ window: "primary", usedPercent: 42, windowMinutes: 300, resetSeconds: undefined }, { window: "secondary", usedPercent: 7, windowMinutes: undefined, resetSeconds: undefined }]);
+  const seen: string[] = [];
+  const fetcher = (async (url: URL, init: RequestInit) => {
+    seen.push(`${url.pathname}?${url.searchParams.get("page") ?? ""} ${JSON.stringify(init.headers)}`);
+    if (url.hostname === "api.openai.com") return Response.json(url.searchParams.get("page")
+      ? { data: [{ results: [{ amount: { value: 0.5, currency: "usd" } }] }], has_more: false }
+      : { data: [{ results: [{ amount: { value: 1.25, currency: "usd" } }, { amount: { value: 2, currency: "usd" } }] }], has_more: true, next_page: "p2" });
+    return Response.json({ data: [{ results: [{ amount: "1234.5", currency: "USD" }] }, { results: [{ amount: "100", currency: "USD" }] }], has_more: false });
+  }) as unknown as typeof fetch;
+  assert.equal(await organizationSpend("openai", "sk-admin-x", new Date("2026-10-01T00:00:00Z"), fetcher), 3.75);
+  assert.equal(await organizationSpend("anthropic", "sk-ant-admin-x", new Date("2026-10-01T00:00:00Z"), fetcher), 13.35);
+  assert.match(seen[0], /\/v1\/organization\/costs\? .*Bearer sk-admin-x/);
+  assert.match(seen[2], /\/v1\/organizations\/cost_report\? .*x-api-key.*sk-ant-admin-x/);
+  const denied = (async () => Response.json({ error: { message: "admin key required" } }, { status: 401 })) as unknown as typeof fetch;
+  await assert.rejects(organizationSpend("openai", "sk-admin-bad", new Date(), denied));
 });

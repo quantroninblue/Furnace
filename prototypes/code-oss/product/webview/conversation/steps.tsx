@@ -12,9 +12,10 @@ const approvalText = {
 // The saved-rule option: "Always allow “npm test” in this project".
 const projectRule = (rule: NonNullable<Step["rule"]>) => rule.kind === "edit" ? "Always allow edits in this project"
   : rule.kind === "network" ? `Always allow ${rule.pattern} in this project` : `Always allow “${rule.pattern}” in this project`;
+const LOOKUPS = ["find_definition", "find_references", "find_symbols", "file_outline", "get_problems"];
 const category = (tool: string) =>
-  ["read_file", "list_directory", "glob", "grep"].includes(tool) ? "explore"
-    : ["write_file", "edit_file", "apply_patch", "delete_path", "move_path", "create_directory"].includes(tool) ? "edit"
+  ["read_file", "list_directory", "glob", "grep", ...LOOKUPS].includes(tool) ? "explore"
+    : ["write_file", "edit_file", "apply_patch", "delete_path", "move_path", "create_directory", "rename_symbol"].includes(tool) ? "edit"
       : tool === "web_fetch" ? "web" : tool;
 
 export function duration(ms: number) {
@@ -60,12 +61,13 @@ const StepItem = memo(function StepItem({ step }: { step: Step }) {
         </details>
       )}
       {step.status === "waiting" && (
-        <div className="approval">
+        <div className={`approval${step.untrusted ? " untrusted" : ""}`}>
           <strong>{question}</strong>
+          {step.untrusted && <p className="untrusted-note" role="note">⚠ This chat contains untrusted content ({step.untrusted}). It could be trying to steer the agent: check exactly what this does before approving. “Always allow” is off until the content leaves the chat.</p>}
           <div className="row">
             <button className="primary" onClick={() => post({ type: "approval", id: step.id, decision: "approve" })}>Approve</button>
-            <button className="ghost" onClick={() => post({ type: "approval", id: step.id, decision: "always" })}>{always}</button>
-            {step.rule && step.approval !== "outside" && <button className="ghost" title="Saved for this project; manage it on the Workspace view's Rules page" onClick={() => post({ type: "approval", id: step.id, decision: "project" })}>{projectRule(step.rule)}</button>}
+            {!step.untrusted && <button className="ghost" onClick={() => post({ type: "approval", id: step.id, decision: "always" })}>{always}</button>}
+            {!step.untrusted && step.rule && step.approval !== "outside" && <button className="ghost" title="Saved for this project; manage it on the Workspace view's Rules page" onClick={() => post({ type: "approval", id: step.id, decision: "project" })}>{projectRule(step.rule)}</button>}
             <button className="ghost" onClick={() => post({ type: "approval", id: step.id, decision: "deny" })}>Deny</button>
             {step.diff && <button className="ghost" onClick={() => post({ type: "openDiff", id: step.id })}>Open Diff</button>}
           </div>
@@ -80,7 +82,7 @@ function groupTitle(kind: string, steps: Step[]) {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   if (kind === "explore") {
     const parts = [count(["read_file"]) && `read ${plural(count(["read_file"]), "file")}`, count(["grep", "glob"]) && `searched ${plural(count(["grep", "glob"]), "time")}`,
-      count(["list_directory"]) && `listed ${plural(count(["list_directory"]), "folder")}`].filter(Boolean).join(", ");
+      count(["list_directory"]) && `listed ${plural(count(["list_directory"]), "folder")}`, count(LOOKUPS) && `looked up code ${plural(count(LOOKUPS), "time")}`].filter(Boolean).join(", ");
     return parts.charAt(0).toUpperCase() + parts.slice(1);
   }
   if (kind === "edit") {

@@ -101,7 +101,7 @@ export function summarize(files: FileChange[]): ChangeSummary[] {
 /** A ToolHost that records each change's prior state before passing it on. */
 export function recordingHost(host: ToolHost, changes: TurnChanges): ToolHost {
   return {
-    root: host.root, trusted: host.trusted, sandbox: host.sandbox,
+    root: host.root, trusted: host.trusted, sandbox: host.sandbox, code: host.code,
     read: file => host.read(file), kind: file => host.kind(file), list: directory => host.list(directory),
     async write(file, text) {
       const entry = await changes.capture(host, file);

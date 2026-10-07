@@ -80,6 +80,23 @@ exports.run = async () => {
         await chat.send('fail'); assert.equal(chat.data.messages.at(-1).state, 'failed'); assert(!JSON.stringify(chat.snapshot()).includes('PRIVATE_FIXTURE_SECRET'));
         await chat.send('recovered'); assert.equal(chat.data.messages.at(-1).state, 'complete');
         checks.push('attachment copied and explicitly shared; stream cancellation; sanitized provider error and subsequent recovery');
+        // Inline edit in the editor: the replacement shows in place with Accept/Reject; Reject restores, Accept keeps.
+        const inlineFile = vscode.Uri.file(path.join(directory, 'workspace/inline.txt'));
+        await fs.writeFile(inlineFile.fsPath, 'keep\nmake me loud\nkeep\n');
+        const inlineDoc = await vscode.workspace.openTextDocument(inlineFile), inlineEditor = await vscode.window.showTextDocument(inlineDoc, { preview: false });
+        inlineEditor.selection = new vscode.Selection(1, 0, 2, 0);
+        await api.inline.start({ instruction: 'shout' });
+        assert.equal(inlineDoc.getText(), 'keep\nMAKE ME LOUD\nkeep\n');
+        const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', inlineFile);
+        assert(lenses.some(lens => lens.command?.title.includes('Accept')) && lenses.some(lens => lens.command?.title.includes('Reject')));
+        await api.inline.finish(false, inlineFile.toString());
+        assert.equal(inlineDoc.getText(), 'keep\nmake me loud\nkeep\n');
+        inlineEditor.selection = new vscode.Selection(1, 0, 2, 0);
+        await api.inline.start({ instruction: 'shout' });
+        await api.inline.finish(true, inlineFile.toString());
+        assert.equal(inlineDoc.getText(), 'keep\nMAKE ME LOUD\nkeep\n');
+        assert.equal(await fs.readFile(inlineFile.fsPath, 'utf8'), 'keep\nmake me loud\nkeep\n', 'inline edits stay unsaved until the user saves');
+        checks.push('inline edit replaces the selection in the editor with Accept/Reject lenses; Reject restores the original, Accept keeps it unsaved');
         // Session switch while a turn runs.
         await chat.save(); const savedId = chat.data.id;
         await fs.writeFile(path.join(directory, 'saved-session.json'), JSON.stringify({ id: savedId }));
