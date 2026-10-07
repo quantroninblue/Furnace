@@ -15,6 +15,8 @@ export type ResearchSource = {
   links: { url: string; label: string }[];
   images: { url: string; label: string }[];
   capturedAt: string; truncated: boolean;
+  /** Citation key for this conversation, e.g. "S1". */
+  cite?: string;
 };
 export type Message = {
   id: string;
@@ -56,8 +58,12 @@ export type AgentStatus = {
   chatgpt?: ChatGPTStatus;
   claude?: ClaudeStatus;
 };
-export type SessionSummary = { id: string; title: string; createdAt: string; updatedAt: string; projectRoot: string | null; model: string; messageCount: number; snippet?: string };
-export type Session = Omit<SessionSummary, "messageCount" | "snippet"> & { messages: Message[]; plan: string; sources?: ResearchSource[]; customTitle?: string; branchOf?: string };
+export type SessionSummary = { id: string; title: string; createdAt: string; updatedAt: string; projectRoot: string | null; model: string; messageCount: number; snippet?: string; branchOf?: string; branchAt?: string };
+export type Session = Omit<SessionSummary, "messageCount" | "snippet"> & { messages: Message[]; plan: string; sources?: ResearchSource[]; customTitle?: string;
+  /** Plan step key → latest acceptance-check result (see plan-link.ts). */
+  evidence?: Record<string, unknown>;
+  /** Research source id → its citation key ([S1] …) with title and URL, kept after the source is removed. */
+  citations?: Record<string, { key: string; title: string; url: string }> };
 export type ChatEvent = {
   id: string;
   delta?: string;
@@ -68,6 +74,8 @@ export type ChatEvent = {
   proposal?: Proposal;
   /** Measured by the provider: input = prompt size of the latest model call, output = tokens it generated. */
   usage?: { input?: number; output?: number };
+  /** Rate-limit or plan-usage headers from the provider's latest response. */
+  limits?: import("../main/remote-models").Limits;
 };
 export type ImageInput = { mime: string; data: string };
 export interface WorkspaceAPI {

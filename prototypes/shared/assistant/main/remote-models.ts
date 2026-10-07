@@ -14,12 +14,88 @@ import { textBlocks } from "./text-blocks";
 
 // Agentic turns: enough room for multi-file work; Stop always cancels.
 export const MAX_ROUNDS = 100, MAX_TOOL_CALLS = 250;
-function clients(provider: RemoteProvider, key: string, fetcher?: typeof fetch) {
-  const common = { apiKey: key, maxRetries: 0, timeout: 180000, ...(fetcher ? { fetch: fetcher } : {}) };
+function clients(provider: RemoteProvider, key: string, fetcher?: typeof fetch, onLimits?: (limits: Limits) => void) {
+  const base = fetcher ?? fetch;
+  // Rate-limit (and ChatGPT plan) headers ride along on every response.
+  const watched: typeof fetch = onLimits ? async (input, init) => { const response = await base(input, init); const limits = readLimits(response.headers); if (limits) onLimits(limits); return response; } : base;
+  const common = { apiKey: key, maxRetries: 0, timeout: 180000, ...(fetcher || onLimits ? { fetch: watched } : {}) };
   return provider === "openai"
     ? new OpenAI({ ...common, baseURL: "https://api.openai.com/v1" })
     : new Anthropic({ ...common, baseURL: "https://api.anthropic.com" });
 }
+/** What a provider reported about its limits on the latest response (all optional). */
+export type Limits = {
+  tokens?: { limit?: number; remaining?: number; reset?: string };
+  requests?: { limit?: number; remaining?: number; reset?: string };
+  /** ChatGPT plan windows, as the Codex backend reports them. */
+  plan?: { window: "primary" | "secondary"; usedPercent: number; windowMinutes?: number; resetSeconds?: number }[];
+};
+const number = (value: string | null) => value !== null && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : undefined;
+export function readLimits(headers: Headers): Limits | null {
+  const limits: Limits = {};
+  for (const [kind, openai, anthropic] of [["tokens", "tokens", "tokens"], ["requests", "requests", "requests"]] as const) {
+    const limit = number(headers.get(`x-ratelimit-limit-${openai}`) ?? headers.get(`anthropic-ratelimit-${anthropic}-limit`));
+    const remaining = number(headers.get(`x-ratelimit-remaining-${openai}`) ?? headers.get(`anthropic-ratelimit-${anthropic}-remaining`));
+    const reset = headers.get(`x-ratelimit-reset-${openai}`) ?? headers.get(`anthropic-ratelimit-${anthropic}-reset`) ?? undefined;
+    if (limit !== undefined || remaining !== undefined) limits[kind] = { limit, remaining, reset: reset?.slice(0, 40) };
+  }
+  for (const window of ["primary", "secondary"] as const) {
+    const usedPercent = number(headers.get(`x-codex-${window}-used-percent`));
+    if (usedPercent !== undefined) (limits.plan ??= []).push({ window, usedPercent, windowMinutes: number(headers.get(`x-codex-${window}-window-minutes`)), resetSeconds: number(headers.get(`x-codex-${window}-reset-after-seconds`)) });
+  }
+  return Object.keys(limits).length ? limits : null;
+}
+
+/**
+ * Input tokens of a request's first model call, counted by the provider's own tokenizer
+ * (OpenAI responses/input_tokens, Anthropic count_tokens; neither is billed).
+ */
+export async function remoteCount(provider: RemoteProvider, key: string, request: ChatRequest, tools: AgentTools["definitions"], fetcher?: typeof fetch) {
+  const client = clients(provider, key, fetcher);
+  const history = chatHistory(request.messages, request.context);
+  const instructions = agentInstructions(request.mode ?? "discuss", request.permission, request.environment);
+  const signal = AbortSignal.timeout(20000);
+  try {
+    if (client instanceof OpenAI) {
+      const result = await client.responses.inputTokens.count({ model: request.model, instructions, input: history,
+        ...(tools.length ? { tools: tools.map(tool => ({ type: "function" as const, ...tool.function, strict: true })) } : {}) }, { signal });
+      return result.input_tokens;
+    }
+    const result = await client.messages.countTokens({ model: request.model, system: instructions, messages: history,
+      ...(tools.length ? { tools: tools.map(tool => ({ name: tool.function.name, description: tool.function.description, input_schema: tool.function.parameters })) } : {}) }, { signal });
+    return result.input_tokens;
+  } catch (error) { throw providerError(provider, error); }
+}
+
+/**
+ * Month-to-date organization spend in US dollars, read with an admin key (the only way the
+ * providers report spend; neither exposes a remaining credit balance to API keys).
+ */
+export async function organizationSpend(provider: RemoteProvider, adminKey: string, since: Date, fetcher: typeof fetch = fetch) {
+  let total = 0, page: string | undefined;
+  for (let round = 0; round < 6; round++) {
+    const url = provider === "openai"
+      ? new URL("https://api.openai.com/v1/organization/costs")
+      : new URL("https://api.anthropic.com/v1/organizations/cost_report");
+    if (provider === "openai") { url.searchParams.set("start_time", String(Math.floor(since.getTime() / 1000))); url.searchParams.set("bucket_width", "1d"); }
+    else url.searchParams.set("starting_at", since.toISOString());
+    url.searchParams.set("limit", "31");
+    if (page) url.searchParams.set("page", page);
+    const response = await fetcher(url, { redirect: "error", signal: AbortSignal.timeout(20000),
+      headers: provider === "openai" ? { Authorization: `Bearer ${adminKey}` } : { "x-api-key": adminKey, "anthropic-version": "2023-06-01" } });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw providerError(provider, { status: response.status, error: body.error });
+    for (const bucket of Array.isArray(body.data) ? body.data : []) for (const item of Array.isArray(bucket?.results) ? bucket.results : []) {
+      // OpenAI: { amount: { value, currency } } in dollars; Anthropic: amount as a decimal string in cents.
+      const value = provider === "openai" ? Number(item?.amount?.value) : Number(item?.amount) / 100;
+      if (Number.isFinite(value)) total += value;
+    }
+    if (!body.has_more || typeof body.next_page !== "string") break;
+    page = body.next_page;
+  }
+  return Math.round(total * 100) / 100;
+}
+
 export async function remoteModels(provider: RemoteProvider, key: string, fetcher?: typeof fetch) {
   const client = clients(provider, key, fetcher);
   const models: { id: string; name: string }[] = [];
@@ -45,7 +121,7 @@ export async function chatgptModels(token: string, fetcher: typeof fetch = fetch
 }
 
 export async function remoteChat(provider: RemoteProvider, key: string, request: ChatRequest, signal: AbortSignal, emit: (event: ChatEvent) => void, tools: AgentTools, fetcher?: typeof fetch, options: { chatgpt?: boolean } = {}) {
-  const client = clients(provider, key, fetcher);
+  const client = clients(provider, key, fetcher, limits => emit({ id: request.id, limits }));
   const errorProvider = options.chatgpt ? "chatgpt" : provider;
   const history = chatHistory(request.messages, request.context);
   const instructions = agentInstructions(request.mode ?? "discuss", request.permission, request.environment);

@@ -1,18 +1,22 @@
 const vscode = require('vscode');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const { content } = require('./interface.cjs');
 const { AssistantClient } = require('./assistant-client.cjs');
 const { Conversation } = require('../../shared/assistant/conversation.cjs');
 const { AgentWorkspace, AgentFileReviews, IdeToolHost } = require('./agent-workspace.cjs');
 const { execFile } = require('node:child_process');
-const { findClaude } = require('../../shared/assistant/main/claude-discovery.ts');
 const { buildFromPlanPrompt } = require('../../shared/assistant/main/plan-link.ts');
 const path = require('node:path');
 const { ResearchController } = require('./research-controller.cjs');
 const { gitChanges, problemsText, selectionText, searchPaths } = require('./ide-context.cjs');
 const { CommandTerminals } = require('./terminals.cjs');
 const { AgentChanges } = require('./agent-scm.cjs');
+const { createSupport } = require('./support.cjs');
+const { createDiffViews } = require('./diff-views.cjs');
+const { createBackground } = require('./background-tasks.cjs');
+const { createInlineEdits } = require('./inline-edit.cjs');
+const { createHistoryActions } = require('./history-actions.cjs');
+const { createClaudeSignIn } = require('./claude-signin.cjs');
 let activeResearch, activeConversation;
 exports.deactivate = async () => { await activeConversation?.dispose(); await activeResearch?.dispose(); };
 const { ProductSession, ProductReview, modes } = require('../../shared/product-core.cjs');
@@ -33,7 +37,7 @@ exports.activate = async context => {
     let lastStatus = '';
     let saveQueue = Promise.resolve();
     const scope = () => vscode.workspace.workspaceFolders?.map(folder => folder.name).join(', ') || 'No project needed';
-    let conversation, files, scm;
+    let conversation, files, scm, background, inline, agentFilesKey = '';
     // Status bar mirrors the original app's connection indicator; it opens Connections.
     const indicator = vscode.window.createStatusBarItem('aiGui.model', vscode.StatusBarAlignment.Left, 100);
     indicator.name = 'AI GUI Model'; indicator.command = 'aiGui.connections'; indicator.show();
@@ -62,7 +66,10 @@ exports.activate = async context => {
         setKey('aiGui.busy', !!chat?.busy); setKey('aiGui.approvalPending', !!conversation?.approvals.size);
         scm?.update();
         const { messages = [], ...meta } = chat || {};
-        const base = { type: 'state', state: session.snapshot(), scope: scope(), review: reviews.state(), research: research.snapshot(), chat: chat ? meta : null, status: lastStatus, tour, modeModels };
+        const base = { type: 'state', state: session.snapshot(), scope: scope(), review: reviews.state(), research: research.snapshot(), chat: chat ? meta : null, status: lastStatus, tour, modeModels, background: background?.list() || [] };
+        // Files the agent changed get Keep / Revert lenses in their editors.
+        const filesKey = conversation ? `${conversation.data.id}:${conversation.agentFiles().map(file => `${file.path}@${file.messageId}`).join('|')}` : '';
+        if (filesKey !== agentFilesKey) { agentFilesKey = filesKey; void inline?.refreshAgentFiles(); }
         const serialized = new Map();
         const json = message => { if (!serialized.has(message.id)) serialized.set(message.id, JSON.stringify(message)); return serialized.get(message.id); };
         for (const [webview, view] of views) {
@@ -112,11 +119,7 @@ exports.activate = async context => {
         } else await vscode.commands.executeCommand('workbench.trust.manage');
         broadcast(); return vscode.workspace.isTrusted;
     }
-    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => { if (event.affectsConfiguration('aiGui.agent')) broadcast(); }));
-    // Read-only before/after documents for approval and change previews.
-    const previews = new Map();
-    context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('ai-gui-preview', { provideTextDocumentContent: uri => previews.get(uri.path) ?? '' }));
-    const preview = (key, text) => { previews.set(key, text); return vscode.Uri.from({ scheme: 'ai-gui-preview', path: key }); };
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => { if (event.affectsConfiguration('aiGui')) broadcast(); }));
     // Context the user can share: selection, Problems and Git changes. Sizes feed the context meter.
     const contextCache = { problems: null, diff: null };
     context.subscriptions.push(vscode.languages.onDidChangeDiagnostics(() => { contextCache.problems = null; broadcast(); }));
@@ -155,8 +158,19 @@ exports.activate = async context => {
                 : vscode.workspace.isTrusted ? `Project folder: ${root()} (trusted). Command sandbox: ${sandbox.path ? 'available' : 'unavailable, so commands ask in Auto mode'}.`
                 : `Project folder: ${root()} is in Restricted Mode (not trusted), so file and command tools are disabled. Tell the user to click "Trust Folder" above the message box, then ask again.`,
             contextInfo, gather, terminals, persistSession: persist,
+            // Cost: price overrides ($ per million tokens), monthly budget and the second-model review.
+            pricing: () => vscode.workspace.getConfiguration('aiGui').get('pricing') || {},
+            budget: () => Number(vscode.workspace.getConfiguration('aiGui.budget').get('monthlyUsd')) || 0,
+            reviewSettings: () => { const config = vscode.workspace.getConfiguration('aiGui.review'); return { automatic: config.get('automatic', false), model: config.get('model', '') }; },
             clear: () => files.clear() }, changed: broadcast });
     activeConversation = conversation;
+    const save = () => { void conversation.save(); persist(); };
+    const text = (value, limit) => { if (typeof value !== 'string' || value.length > limit) throw new Error('Invalid message.'); return value; };
+    const support = createSupport({ context, conversation, session, root, permission, sandbox, recent, lastStatus: () => lastStatus, status });
+    const diffViews = createDiffViews({ context, conversation, status, text });
+    const preview = diffViews.preview;
+    background = createBackground({ context, provider, conversation, sandbox, root, status, broadcast, showEntries: diffViews.showEntries, text });
+    inline = createInlineEdits({ context, provider, conversation, documents, status, preview, setKey });
     // Agent changes in the built-in Source Control view, with diffs, revert and Git staging.
     scm = new AgentChanges(context, conversation, { root, preview, status, confirmConflicts: (run, action) => confirmConflicts(run, action), restored: (result, verb) => restored(result, verb) });
     // Connections are discovered on startup and after a folder change, not only on Refresh.
@@ -164,33 +178,9 @@ exports.activate = async context => {
         : conversation.connect({ action: 'discover' }).catch(error => status(`${error.message} Refresh connections when ready.`));
     // Desktop tests start without this machine's real connections unless they opt in.
     const connectionsReady = process.env.AI_GUI_TEST_NO_DISCOVERY ? Promise.resolve() : discoverConnections();
-    let loginTerminal;
-    context.subscriptions.push({ dispose: () => { loginTerminal?.dispose(); void conversation.dispose(); } });
-    // Claude Code owns its sign-in; rediscover once its terminal exits so the panel reflects the CLI's state.
-    context.subscriptions.push(vscode.window.onDidCloseTerminal(async terminal => {
-        if (terminal !== loginTerminal) return;
-        loginTerminal = undefined;
-        try {
-            await conversation.connect({ action: 'discover' });
-            const claude = conversation.connections.connections?.find(item => item.provider === 'claude-code');
-            status(claude?.connected ? 'Claude Code is connected. Choose a Claude model under Active model.' : `Claude Code is not signed in${claude?.error ? `: ${claude.error}` : '.'} Retry sign-in, then refresh connections.`);
-        } catch (error) { status(`${error.message} Refresh connections when ready.`); }
-    }));
-    const save = () => { void conversation.save(); persist(); };
-    const text = (value, limit) => { if (typeof value !== 'string' || value.length > limit) throw new Error('Invalid message.'); return value; };
-    // Restores that would overwrite later edits need the user's explicit go-ahead.
-    async function confirmConflicts(run, action) {
-        try { return await run(false); } catch (error) {
-            if (!error.conflicts) throw error;
-            const choice = await vscode.window.showWarningMessage(`${error.conflicts.length === 1 ? 'A file has' : `${error.conflicts.length} files have`} changed since the agent edited ${error.conflicts.length === 1 ? 'it' : 'them'}.`,
-                { modal: true, detail: `${error.conflicts.slice(0, 12).join('\n')}${error.conflicts.length > 12 ? '\n…' : ''}\n\n${action} replaces those later changes too. Open files can be restored with Undo; deleted files go to the trash.` }, `${action} Anyway`);
-            return choice ? run(true) : null;
-        }
-    }
-    const restored = (result, verb) => {
-        if (!result) return status(`${verb} cancelled.`);
-        status(`${verb}: ${result.restored.length} file${result.restored.length === 1 ? '' : 's'} restored.${result.skipped.length ? ` Not restorable: ${result.skipped.join(', ')}.` : ''} Undo works in open editors.`);
-    };
+    context.subscriptions.push({ dispose: () => { void conversation.dispose(); } });
+    const claudeSignIn = createClaudeSignIn({ context, conversation, status });
+    const { confirmConflicts, restored, handlers: historyHandlers } = createHistoryActions({ conversation, status, save, text });
     const selectModeModel = mode => {
         const preferred = modeModels[mode];
         if (preferred && preferred !== conversation.data.model && !conversation.turn && conversation.connections.models.some(model => model.id === preferred)) conversation.selectModel(preferred);
@@ -225,7 +215,7 @@ exports.activate = async context => {
         model: message => { conversation.selectModel(message.value); modeModels[session.state.mode] = message.value; void context.globalState.update('modeModels', modeModels); },
         context: message => {
             if (!['sharePlan', 'shareEditor', 'shareSelection', 'shareDiff', 'shareProblems'].includes(message.field) || typeof message.enabled !== 'boolean') throw new Error('Invalid sharing control.');
-            conversation[message.field] = message.enabled; broadcast();
+            conversation[message.field] = message.enabled; broadcast(); conversation.measureSoon();
             if (message.field === 'shareDiff' && message.enabled) void gather('diff').catch(() => {});
         },
         mentionSearch: async (message, view) => { void view.webview.postMessage({ type: 'mentions', query: message.value, items: await searchPaths(root(), text(message.value, 300)) }); },
@@ -235,21 +225,6 @@ exports.activate = async context => {
         connection: async message => { await conversation.connect(message.value); status('Connection details updated.'); },
         newChat: async () => { await conversation.switch(); save(); },
         resumeChat: () => showHistory(),
-        historyList: async (message, view) => { void view.webview.postMessage({ type: 'history', query: message.value, items: await conversation.list(text(message.value, 200)), current: conversation.data.id }); },
-        historyOpen: async message => { if (message.id !== conversation.data.id) { await conversation.switch(text(message.id, 100)); save(); } },
-        historyRename: async message => { await conversation.rename(text(message.id, 100), text(message.title, 200)); status('Conversation renamed.'); },
-        historyDelete: async message => {
-            const id = text(message.id, 100);
-            if (await vscode.window.showWarningMessage('Delete this conversation?', { modal: true, detail: 'Its messages and saved checkpoints are removed. Files in your project are not changed.' }, 'Delete') !== 'Delete') return;
-            await conversation.remove(id); save(); status('Conversation deleted.');
-        },
-        branch: async message => { await conversation.branch(text(message.messageId, 100)); save(); status('Branched into a new conversation. Files were not changed; the original conversation is in History.'); },
-        regenerate: async message => {
-            const result = await confirmConflicts(force => conversation.regenerate(text(message.messageId, 100), force), 'Regenerate');
-            if (!result) return status('Regenerate cancelled.');
-            if (result.restored.length) restored(result, 'Regenerating');
-            await result.turn;
-        },
         buildPlan: async () => {
             if (!session.state.brief.trim()) throw new Error('Write a brief with a checklist (- [ ] step) on the Plan page first.');
             setMode('Build'); conversation.sharePlan = true;
@@ -279,7 +254,17 @@ exports.activate = async context => {
         processShow: message => conversation.processes.show(text(message.id, 100)),
         openScm: () => vscode.commands.executeCommand('workbench.view.scm'),
         keys: () => vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', 'AI GUI'),
-        diagnostics: () => copyDiagnostics(),
+        diagnostics: () => support.copyDiagnostics(),
+        feedback: () => support.sendFeedback(),
+        checkUpdates: () => support.checkForUpdates(true),
+        // Plan checks (Q7), second-model review (Q8), timeline (Q9) and spend (Q5).
+        checkStep: async message => { const passed = await conversation.checkStep(text(message.key, 500)); status(passed ? 'Check passed; the step is ticked.' : 'Check failed; see the output on the Plan page.'); },
+        confirmStep: message => { if (typeof message.passed !== 'boolean') throw new Error('Invalid check result.'); conversation.confirmStep(text(message.key, 500), message.passed); },
+        reviewChanges: async message => { await conversation.reviewChanges(text(message.messageId, 100)); status(conversation.data.messages.find(item => item.id === message.messageId)?.review?.state === 'complete' ? 'Second-model review finished; notes are under the changed files.' : 'The review did not finish.'); },
+        addressReview: message => startTurn(() => conversation.addressReview(text(message.messageId, 100))),
+        timeline: async (_message, view) => { void view.webview.postMessage({ type: 'timeline', timeline: await conversation.timeline() }); },
+        spendRefresh: async (_message, view) => { void view.webview.postMessage({ type: 'spend', spend: await provider.spend() }); },
+        inlineEdit: () => inline.start(),
         trustFolder: () => requestTrust(),
         tour: message => { if (message.action === 'ack' && ['permissions', 'review'].includes(message.step)) updateTour({ seen: { [message.step]: true } }); broadcast(); },
         tourDismiss: () => { updateTour({ dismissed: true }); broadcast(); },
@@ -291,39 +276,9 @@ exports.activate = async context => {
         },
         focusConversation: () => vscode.commands.executeCommand('aiGui.conversation.focus'),
         textSmaller: () => textSize('textSmaller'), textLarger: () => textSize('textLarger'), textReset: () => textSize('textReset'),
-        openDiff: async message => {
-            const files = conversation.approvalFiles(message.id);
-            if (!files?.length) throw new Error('This change is no longer pending.');
-            for (const [index, file] of files.slice(0, 10).entries()) {
-                const key = `/${message.id}/${index}/${path.basename(file.path)}`;
-                await vscode.commands.executeCommand('vscode.diff', preview(key + '.before', file.before), preview(key + '.after', file.after), `Proposed: ${file.path}`, { preview: files.length === 1 });
-            }
-        },
-        // Diff of a reply's change: recorded content before the reply against the file now.
-        openChange: async message => {
-            const changed = (await conversation.changedFiles(text(message.messageId, 100))).filter(entry => !message.path || entry.path === message.path);
-            if (!changed.length) throw new Error('No recorded changes to show.');
-            for (const [index, entry] of changed.slice(0, 10).entries()) {
-                const key = `/${message.messageId}/${index}/${path.basename(entry.file)}`;
-                const after = entry.after !== null && await fs.stat(entry.file).then(() => true, () => false) ? vscode.Uri.file(entry.file) : preview(key + '.after', entry.after ?? '');
-                await vscode.commands.executeCommand('vscode.diff', preview(key + '.before', entry.before ?? ''), after, `${entry.path} (agent changes)`, { preview: changed.length === 1 });
-            }
-            if (changed.length > 10) status(`Showing 10 of ${changed.length} changed files.`);
-        },
-        revertChanges: async message => {
-            const file = message.path === undefined ? null : text(message.path, 4096);
-            restored(await confirmConflicts(force => conversation.revert(text(message.messageId, 100), file && [file], force), 'Revert'), file ? `Reverted ${file}` : 'Reverted this reply');
-        },
-        rewind: async message => {
-            const id = text(message.messageId, 100), at = conversation.data.messages.findIndex(item => item.id === id);
-            if (at < 0 || conversation.turn || conversation.command) throw new Error(at < 0 ? 'That message is no longer in this conversation.' : 'Finish or stop the current task first.');
-            const later = conversation.data.messages.slice(at), changed = later.filter(item => item.changes?.files.some(file => !file.reverted)).length;
-            const choice = await vscode.window.showWarningMessage('Rewind the conversation to this message?', { modal: true,
-                detail: `${later.length} message${later.length === 1 ? '' : 's'} from this point on will be removed${changed ? `, and files changed by ${changed} agent repl${changed === 1 ? 'y' : 'ies'} restored to how they were before` : ''}. Your message goes back into the box so you can edit and resend it. Changes made by commands are not undone.` }, 'Rewind');
-            if (choice !== 'Rewind') return;
-            restored(await confirmConflicts(force => conversation.rewind(id, force), 'Rewind'), 'Rewound');
-            await vscode.commands.executeCommand('aiGui.conversation.focus');
-        },
+        ...historyHandlers,
+        ...diffViews.handlers,
+        ...background.handlers,
         copy: async message => { await vscode.env.clipboard.writeText(text(message.text, 1000000)); },
         insertSnippet: async message => {
             const snippet = text(message.text, 1000000);
@@ -354,16 +309,6 @@ exports.activate = async context => {
     async function reviewCommand(message, command) {
         if (message.generation !== reviews.generation) throw new Error('Review expired. Use the current review controls.');
         await vscode.commands.executeCommand(command);
-    }
-    async function claudeSignIn(type) {
-        if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace before launching a sign-in terminal.');
-        // Never replace a running sign-in: its browser authorization would lose its callback.
-        if (loginTerminal && !loginTerminal.exitStatus) { loginTerminal.show(); status('Claude Code sign-in is already open. Finish it in the terminal, or close that terminal to start again.'); return; }
-        const executable = await findClaude(); if (!executable) throw new Error('Install Claude Code separately, then refresh Connections.');
-        loginTerminal?.dispose();
-        loginTerminal = vscode.window.createTerminal({ name: 'Claude Code sign-in', shellPath: executable, shellArgs: ['auth', 'login', ...(type === 'claudeConsole' ? ['--console'] : [])], cwd: context.globalStorageUri.fsPath });
-        loginTerminal.show();
-        status('Complete Claude Code sign-in in the terminal. If the browser shows a code, paste it there. Connections refresh when it finishes.');
     }
     function attach(webview, surface, disposables) {
         webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')] };
@@ -423,24 +368,6 @@ exports.activate = async context => {
         await showHome('connections');
         if (!conversation.connecting) { conversation.connections = await provider.status(); broadcast(); }
     }
-    // Facts for a bug report. No conversation text, account names, keys or file contents.
-    async function copyDiagnostics() {
-        const chat = conversation.snapshot(), home = os.homedir(), product = JSON.parse(await fs.readFile(path.join(context.extensionPath, 'package.json'), 'utf8'));
-        const redact = value => String(value).split(home).join('~').replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<email>');
-        const usage = chat.usage;
-        const lines = [
-            `AI GUI ${product.version} · Code OSS ${vscode.version} · Electron ${process.versions.electron} · Node ${process.versions.node}`,
-            `OS: ${os.type()} ${os.release()} ${os.arch()} · session ${process.env.XDG_SESSION_TYPE || 'unknown'} · zoom ${vscode.workspace.getConfiguration('window').get('zoomLevel')}`,
-            `Project: ${root() ? `open, ${vscode.workspace.isTrusted ? 'trusted' : 'restricted'}` : 'none'} · permissions ${permission()} · sandbox ${sandbox.path ? 'available' : 'unavailable'} · mode ${session.state.mode}`,
-            `Model: ${chat.model || 'none'} · context ${usage ? `~${usage.used} of ${usage.window} tokens, ${usage.condensed} summaries` : 'n/a'}`,
-            `Connections: ${(chat.connections.connections || []).map(item => `${item.provider}=${item.connected ? 'connected' : 'not connected'}${item.error ? ` (${redact(item.error).slice(0, 160)})` : ''}`).join('; ') || 'not discovered'}`,
-            `Conversation: ${chat.messages.length} messages · busy ${chat.busy} · queued ${chat.queue.length} · background processes ${chat.processes.filter(item => item.status === 'running').length} · rules ${chat.rules.length}`,
-            `Last error: ${redact(chat.error || lastStatus || 'none').slice(0, 300)}`,
-            '', 'Recent log:', ...recent.slice(-80).map(redact),
-        ];
-        await vscode.env.clipboard.writeText(lines.join('\n'));
-        status('Diagnostics copied to the clipboard. They contain no conversation text, keys or account names; check before sharing.');
-    }
     context.subscriptions.push(vscode.commands.registerCommand('aiGui.home', () => showHome()));
     context.subscriptions.push(vscode.commands.registerCommand('aiGui.tour', () => showTour().catch(error => status(error.message))));
     context.subscriptions.push(vscode.commands.registerCommand('aiGui.connections', () => showConnections().catch(error => status(error.message))));
@@ -456,7 +383,26 @@ exports.activate = async context => {
     command('aiGui.approve', () => { const id = conversation.approvals.keys().next().value; if (id) conversation.decide(id, 'approve'); });
     command('aiGui.deny', () => { const id = conversation.approvals.keys().next().value; if (id) conversation.decide(id, 'deny'); });
     command('aiGui.compact', () => handlers.compact());
-    command('aiGui.copyDiagnostics', () => copyDiagnostics());
+    command('aiGui.copyDiagnostics', () => support.copyDiagnostics());
+    command('aiGui.sendFeedback', () => support.sendFeedback());
+    command('aiGui.checkForUpdates', () => support.checkForUpdates(true));
+    command('aiGui.inlineEdit', () => inline.start());
+    command('aiGui.inlineEdit.accept', uri => inline.finish(true, uri));
+    command('aiGui.inlineEdit.reject', uri => inline.finish(false, uri));
+    command('aiGui.inlineEdit.cancel', () => inline.cancel());
+    command('aiGui.inlineEdit.diff', uri => inline.showDiff(uri || vscode.window.activeTextEditor?.document.uri.toString()));
+    command('aiGui.agentHunk.keep', (uri, hunk) => inline.keepHunk(uri, hunk));
+    command('aiGui.agentHunk.revert', (uri, hunk) => inline.revertHunk(uri, hunk));
+    command('aiGui.background.start', async () => {
+        const prompt = await vscode.window.showInputBox({ title: 'Start Background Task', prompt: 'The agent works on this in a separate Git worktree while you keep editing. Review and apply the result when it finishes.', placeHolder: 'For example: add tests for the parser', ignoreFocusOut: true });
+        if (prompt?.trim()) await background.start(prompt.trim());
+    });
+    command('aiGui.timeline', async () => { await vscode.commands.executeCommand('aiGui.conversation.focus'); for (const [webview, view] of views) if (view.surface === 'conversation') void webview.postMessage({ type: 'showTimeline' }); });
+    command('aiGui.reviewLastChanges', () => {
+        const reply = conversation.data.messages.findLast(message => message.role === 'assistant' && message.changes?.files.some(file => !file.reverted));
+        if (!reply) throw new Error('No agent reply with changes to review.');
+        return handlers.reviewChanges({ messageId: reply.id });
+    });
     command('aiGui.showLog', () => output.show(true));
     command('aiGui.proposeFixture', async () => {
         const proposal = await reviews.proposeFixture();
@@ -480,6 +426,8 @@ exports.activate = async context => {
         if (!tour.dismissed && !vscode.workspace.workspaceFolders?.length) void revealHome(true);
         else void vscode.commands.executeCommand('aiGui.conversation.focus');
     }
+    // Daily update check, only when this build names a feed (package.json "updates.feed").
+    if (!process.env.AI_GUI_TEST_NO_DISCOVERY) { const timer = setTimeout(() => { void support.checkForUpdates(false).catch(() => {}); }, 30000); context.subscriptions.push({ dispose: () => clearTimeout(timer) }); }
     log('info', `Activated (Code OSS ${vscode.version}).`);
-    return { session, reviews, research, conversation, documents, showHome, status, connectionsReady, scm, terminals, save: async () => { await saveQueue; await conversation.save(); } };
+    return { session, reviews, research, conversation, documents, showHome, status, connectionsReady, scm, terminals, background: background.tasks, inline, support, save: async () => { await saveQueue; await conversation.save(); } };
 };

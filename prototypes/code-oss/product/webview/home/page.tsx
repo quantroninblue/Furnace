@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { AuditEntry, ChatState, Page, Rule, State } from "../protocol";
+import type { AuditEntry, BackgroundTask, ChatState, OrgSpend, Page, PlanStep, Rule, State } from "../protocol";
 import { Icon, type IconName } from "../icons";
-import { closeConnections, post, setPage, setPrefs, useStore, useSyncedText } from "../store";
+import { choosePage, closeConnections, post, setPrefs, useStore, useSyncedText } from "../store";
 import { tourSteps } from "../tour";
 
 function Tour({ data }: { data: State }) {
@@ -104,6 +104,7 @@ function Connections({ chat }: { chat: ChatState }) {
             <button className="primary" disabled={busy} onClick={() => { post({ type: "connection", value: { action: "connect", provider, key, remember } }); setKey(""); }}>Connect API Key</button>
             <button className="ghost" disabled={busy} onClick={() => post({ type: "connection", value: { action: "disconnect", provider } })}>Disconnect API Key</button>
           </div>
+          <SpendPanel chat={chat} remember={remember} />
         </ConnectionCard>}
         <label className="check remember" title={c.secureStorage ? "" : "Secure storage is unavailable; sign-ins last for this session."}>
           <input id="remember" type="checkbox" checked={remember && !!c.secureStorage} disabled={!c.secureStorage} onChange={event => setRemember(event.target.checked)} />Remember sign-ins and keys securely on this device
@@ -113,6 +114,115 @@ function Connections({ chat }: { chat: ChatState }) {
           <button className="primary" onClick={closeConnections}>Close Connections</button>
         </div>
       </div>
+    </section>
+  );
+}
+
+const usd = (value: number) => `$${value.toFixed(value >= 100 ? 0 : 2)}`;
+const providerName = (id: string) => ({ openai: "OpenAI", anthropic: "Anthropic", chatgpt: "ChatGPT" } as Record<string, string>)[id] || id;
+// Spend: replies made here with API keys (local estimate) and, with an admin key, the
+// organization's month-to-date cost as the provider reports it. Normal keys cannot read credit.
+function SpendPanel({ chat, remember }: { chat: ChatState; remember: boolean }) {
+  const org: OrgSpend | null = useStore(value => value.orgSpend);
+  const admin = chat.connections.admin, [provider, setProvider] = useState<"openai" | "anthropic">("openai"), [key, setKey] = useState("");
+  const anyAdmin = !!(admin?.openai || admin?.anthropic);
+  useEffect(() => { if (anyAdmin) post({ type: "spendRefresh" }); }, [anyAdmin]);
+  const month = chat.spend?.month, today = chat.spend?.today;
+  return (
+    <div id="spend-panel" className="spend-panel">
+      <h4>Spend</h4>
+      <p className="connection-detail">From replies in AI GUI on this device (estimated at list prices): today <b>{usd(today?.total || 0)}</b>, this month <b>{usd(month?.total || 0)}</b>
+        {month && Object.keys(month.byProvider).length ? ` (${Object.entries(month.byProvider).map(([name, value]) => `${providerName(name)} ${usd(value)}`).join(", ")})` : ""}.
+        {chat.budget ? ` Monthly budget ${usd(chat.budget)}.` : " Set aiGui.budget.monthlyUsd to be warned near a budget."}</p>
+      {Object.entries(chat.limits || {}).map(([name, limits]) => limits.tokens?.remaining !== undefined || limits.plan?.length ? <p key={name} className="muted small">{providerName(name)}: {limits.plan?.length
+        ? limits.plan.map(item => `${Math.round(item.usedPercent)}% of the ${item.windowMinutes ? `${Math.round(item.windowMinutes / 60)}h` : item.window} window used`).join(", ")
+        : `${limits.tokens?.remaining?.toLocaleString()} of ${limits.tokens?.limit?.toLocaleString()} tokens left this minute`}</p> : null)}
+      {anyAdmin && <div className="org-spend">
+        {(["openai", "anthropic"] as const).filter(name => admin?.[name]).map(name => {
+          const item = org?.[name];
+          return <p key={name}><b>{providerName(name)} organization</b>: {!item ? "Loading…" : item.error ? <span className="error">{item.error}</span> : `${usd(item.amount || 0)} since ${new Date(item.since!).toLocaleDateString()}`}</p>;
+        })}
+        <button className="ghost small" onClick={() => post({ type: "spendRefresh" })}><Icon name="refresh" size={12} />Refresh</button>
+      </div>}
+      <details className="admin-keys"><summary>Organization spend with an admin key</summary>
+        <p className="connection-detail">API keys cannot read your credit balance. An admin key (OpenAI <code>sk-admin-…</code>, Anthropic <code>sk-ant-admin…</code>) can read the organization’s cost report; AI GUI uses it only for that.</p>
+        <select aria-label="Admin key provider" value={provider} onChange={event => setProvider(event.target.value as "openai" | "anthropic")}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select>
+        <input aria-label="Admin key" type="password" autoComplete="off" maxLength={4096} placeholder={provider === "openai" ? "sk-admin-…" : "sk-ant-admin…"} value={key} onChange={event => setKey(event.target.value)} />
+        <div className="row">
+          <button className="primary" disabled={chat.connecting || !key.trim()} onClick={() => { post({ type: "connection", value: { action: "adminConnect", provider, key, remember } }); setKey(""); }}>Connect Admin Key</button>
+          {admin?.[provider] && <button className="ghost" disabled={chat.connecting} onClick={() => post({ type: "connection", value: { action: "adminDisconnect", provider } })}>Remove Admin Key</button>}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+// Plan steps with acceptance checks: run a check, or confirm a manual one; the result is kept as evidence.
+function PlanChecks({ steps, checking, busy }: { steps: PlanStep[]; checking: string | null; busy: boolean }) {
+  if (!steps.some(step => step.check)) return steps.length ? <p className="muted small plan-check-hint">Add a check to a step to prove it: <code>- [ ] Parse dates (check: `npm test`)</code> or <code>(check: manual: open the page)</code>. Plan mode adds them for you.</p> : null;
+  return (
+    <ol id="plan-steps" className="plan-steps" aria-label="Plan steps and checks">
+      {steps.map(step => {
+        const evidence = step.evidence, status = evidence?.status || (step.done ? "done" : "open");
+        return (
+          <li key={step.key} className={`plan-step ${status}`}>
+            <div className="plan-step-head"><span className="step-icon">{evidence?.status === "passed" ? "✓" : evidence?.status === "failed" ? "✕" : step.done ? "✓" : "○"}</span><strong>{step.text}</strong></div>
+            {step.check && <small className="plan-step-check">{step.check.kind === "command" ? <>Check: <code>{step.check.text}</code></> : <>Check: {step.check.text.replace(/^manual:\s*/, "")}</>}</small>}
+            {evidence && <details className="plan-evidence"><summary>{evidence.status === "passed" ? "Passed" : "Failed"} · {evidence.by === "you" ? "by you" : "by the agent"} · {new Date(evidence.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{evidence.exitCode !== undefined && evidence.exitCode !== null ? ` · exit ${evidence.exitCode}` : ""}</summary>
+              {evidence.output ? <pre className="command-output">{evidence.output}</pre> : <p className="muted small">{evidence.check}</p>}</details>}
+            {step.check && <div className="row">
+              {step.check.kind === "command"
+                ? <button className="ghost small" disabled={busy || !!checking} onClick={() => post({ type: "checkStep", key: step.key })}><Icon name="play" size={11} />{checking === step.key ? "Running…" : "Run Check"}</button>
+                : <><button className="ghost small" disabled={busy} onClick={() => post({ type: "confirmStep", key: step.key, passed: true })}><Icon name="check" size={11} />Mark Passed</button>
+                  <button className="ghost small" disabled={busy} onClick={() => post({ type: "confirmStep", key: step.key, passed: false })}>Mark Failed</button></>}
+            </div>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+const taskState: Record<BackgroundTask["state"], string> = { running: "Working", stopping: "Stopping", done: "Ready to review", failed: "Failed", stopped: "Stopped", interrupted: "Interrupted", applied: "Applied", discarded: "Discarded" };
+// Background tasks: Build work in separate Git worktrees, reviewed and applied when done.
+function BackgroundTasks({ tasks, chat }: { tasks: BackgroundTask[]; chat: ChatState }) {
+  const [prompt, setPrompt] = useState(""), [follow, setFollow] = useState<Record<string, string>>({});
+  const shown = tasks.filter(task => !task.removed || task.state === "applied").slice(0, 12);
+  const project = chat.agent?.project;
+  return (
+    <section id="background" className="background-tasks" aria-label="Background tasks">
+      <h3 className="section-title">Background tasks</h3>
+      <p className="muted small">The agent works in a separate Git worktree (a copy of the project as it is now, including uncommitted files) while you keep editing. You are notified when it needs an approval or finishes; then review the changes and apply them, or discard them.</p>
+      <form className="background-form" onSubmit={event => { event.preventDefault(); if (prompt.trim()) { post({ type: "backgroundStart", value: prompt }); setPrompt(""); } }}>
+        <textarea aria-label="Describe a background task" rows={2} maxLength={20000} placeholder={project ? "For example: add tests for the date parser" : "Open a Git project to start background tasks"} disabled={!project?.trusted} value={prompt} onChange={event => setPrompt(event.target.value)} />
+        <button className="primary" type="submit" disabled={!prompt.trim() || !project?.trusted || !chat.model}>Start in Background</button>
+      </form>
+      <ul className="task-list">
+        {shown.map(task => (
+          <li key={task.id} className={`task ${task.state}`}>
+            <div className="task-head"><strong title={task.prompt}>{task.title}</strong><span className={`task-state ${task.state}`}>{taskState[task.state]}</span></div>
+            <small className="muted">{[task.model.slice(task.model.indexOf("/") + 1), task.files.length ? `${task.files.length} file${task.files.length === 1 ? "" : "s"} changed` : "", typeof task.cost === "number" ? `$${task.cost.toFixed(3)}` : "", task.state === "running" ? task.activity : ""].filter(Boolean).join(" · ")}</small>
+            {task.error && <p className="error">{task.error}</p>}
+            {task.conflicted?.length ? <p className="warn small">Resolve conflict markers in {task.conflicted.join(", ")}.</p> : null}
+            {task.approvals.map(item => <div key={item.id} className="approval"><strong>Needs approval: {item.title}</strong><div className="row">
+              <button className="primary small" onClick={() => post({ type: "backgroundDecide", stepId: item.id, decision: "approve" })}>Approve</button>
+              <button className="ghost small" onClick={() => post({ type: "backgroundDecide", stepId: item.id, decision: "deny" })}>Deny</button></div></div>)}
+            {task.summary && task.state !== "running" && <details><summary>Summary</summary><p className="task-summary">{task.summary}</p></details>}
+            <div className="row">
+              {task.state === "running" && <button className="ghost small" onClick={() => post({ type: "backgroundStop", id: task.id })}><Icon name="stop" size={11} />Stop</button>}
+              {task.state !== "running" && task.state !== "stopping" && !task.removed && task.files.length > 0 && <>
+                <button className="ghost small" onClick={() => post({ type: "backgroundReview", id: task.id })}><Icon name="diff" size={11} />Review</button>
+                {task.state !== "applied" && <button className="primary small" onClick={() => post({ type: "backgroundApply", id: task.id })}>Apply to Project</button>}
+              </>}
+              {task.state !== "running" && task.state !== "stopping" && !task.removed && <button className="ghost small" onClick={() => post({ type: "backgroundDiscard", id: task.id })}><Icon name="trash" size={11} />{task.state === "applied" ? "Remove Worktree" : "Discard"}</button>}
+            </div>
+            {["done", "stopped", "failed", "interrupted"].includes(task.state) && !task.removed && <form className="row" onSubmit={event => { event.preventDefault(); const value = follow[task.id]?.trim(); if (value) { post({ type: "backgroundFollowUp", id: task.id, value }); setFollow({ ...follow, [task.id]: "" }); } }}>
+              <input aria-label={`Follow-up for ${task.title}`} placeholder="Ask for more changes in this worktree" value={follow[task.id] || ""} onChange={event => setFollow({ ...follow, [task.id]: event.target.value })} />
+              <button className="ghost small" type="submit">Send</button></form>}
+          </li>
+        ))}
+        {!shown.length && <li className="empty-note">No background tasks yet. Start one here or type <code>/background</code> and the task in the conversation.</li>}
+      </ul>
     </section>
   );
 }
@@ -250,7 +360,9 @@ function Activity() {
 }
 const shortcuts: [string, string][] = [["Ctrl+Alt+I", "Focus the conversation"], ["Ctrl+Alt+N", "New chat"], ["Ctrl+Alt+H", "Chat history"], ["Ctrl+Alt+M or Alt+1…4", "Switch mode"],
   ["Ctrl+Alt+W", "This workspace view"], ["Enter / Shift+Enter", "Send (queues while busy) / new line"], ["Escape or Ctrl+Alt+.", "Stop the reply"],
-  ["Ctrl+Alt+Enter / Ctrl+Alt+Backspace", "Approve / deny the waiting action"], ["@ and /", "Add files or folders / commands"]];
+  ["Ctrl+Alt+Enter / Ctrl+Alt+Backspace", "Approve / deny the waiting action"], ["Ctrl+Alt+E", "Inline edit the selection (Ctrl+Enter accepts, Escape rejects)"], ["@ and /", "Add files or folders / commands"]];
+const modeTitles: Partial<Record<Page, string>> = { start: "Start · Discuss mode: the chat uses only the context you share (Alt+1)", plan: "Plan mode: reads and searches the project, proposes a brief (Alt+2)",
+  build: "Build mode: reads, edits and creates files, runs commands (Alt+3)", research: "Research mode: uses shared sources, suggests pages (Alt+4)" };
 const pages: [Page, string][] = [["start", "Start"], ["plan", "Plan"], ["build", "Build"], ["research", "Research"], ["rules", "Rules"], ["activity", "Activity"], ["connections", "Connections"]];
 
 export function HomePage() {
@@ -270,7 +382,7 @@ export function HomePage() {
         </div>
       </header>
       <nav className="page-tabs" role="tablist" aria-label="Workspace pages">
-        {pages.map(([id, label]) => <button key={id} role="tab" aria-selected={page === id} onClick={() => id === "connections" ? post({ type: "connections" }) : setPage(id)}>{label}</button>)}
+        {pages.map(([id, label]) => <button key={id} role="tab" aria-selected={page === id} title={modeTitles[id]} onClick={() => id === "connections" ? post({ type: "connections" }) : choosePage(id)}>{label}</button>)}
       </nav>
       {!data.tour.dismissed && page === "start" && <Tour data={data} />}
       {open && data.chat && <Connections chat={data.chat} />}
@@ -291,11 +403,24 @@ export function HomePage() {
           <div className="row">
             <button className="ghost small" onClick={() => post({ type: "keys" })}>Change Shortcuts</button>
             <button className="ghost small" onClick={() => post({ type: "diagnostics" })} title="Copies versions, settings and recent errors (no conversation text or keys) for a bug report">Copy Diagnostics</button>
+            <button className="ghost small" onClick={() => post({ type: "feedback" })}>Send Feedback</button>
+            <button className="ghost small" onClick={() => post({ type: "checkUpdates" })}>Check for Updates</button>
           </div>
+          <section id="privacy" className="privacy" aria-label="Privacy">
+            <h3 className="section-title"><Icon name="shield" size={14} /> Your data stays yours</h3>
+            <ul>
+              <li><b>No AI GUI account, no telemetry.</b> Conversations, the activity log, saved rules and checkpoints stay on this device.</li>
+              <li><b>Only what you send leaves.</b> A message goes to the model you chose, with the context you shared (chips, @files, pasted images) and what the agent reads to do the task.</li>
+              <li><b>Your accounts, your billing.</b> ChatGPT, Claude Code, API keys or local Ollama; nothing switches accounts or falls back to paid billing on its own.</li>
+              <li><b>Keys stay in a separate service</b> and in your system’s secure storage only when you choose “Remember”.</li>
+              <li><b>Local models keep everything on this machine.</b> With Ollama, nothing leaves it.</li>
+            </ul>
+          </section>
         </section>}
         {page === "plan" && <section>
           <div className="page-heading"><h2>Make the next step clear.</h2><p className="lede">An editable brief saved with this conversation. Share it from the conversation’s context chips to include it in replies, or build it step by step.</p></div>
           <Brief value={data.state.brief} busy={busy} />
+          {data.chat && <PlanChecks steps={data.chat.planSteps || []} checking={data.chat.checking} busy={busy} />}
         </section>}
         {page === "build" && <section>
           <div className="page-heading"><h2>Your code. Your decisions.</h2><p className="lede">Ask for a change in the conversation. The agent explores, edits and creates files and runs commands within your permission mode (Ask first, Auto or Full access), showing each step and its diff. Every reply lists the files it changed so you can review them, revert one or all, or rewind the chat.</p></div>
@@ -309,7 +434,9 @@ export function HomePage() {
           </div>}
           <div className="row">
             <button className="ghost" onClick={() => post({ type: "openScm" })}><Icon name="git" size={14} /> Source Control</button>
+            <button className="ghost" title="Select code in an editor, then describe the change (Ctrl+Alt+E)" onClick={() => post({ type: "inlineEdit" })}><Icon name="pencil" size={14} /> Inline Edit</button>
           </div>
+          {data.chat && <BackgroundTasks tasks={data.background || []} chat={data.chat} />}
           <div className="note"><Icon name="terminal" size={13} /><p>The agent’s commands show live in the <b>AI Agent</b> terminal (Ctrl+C there interrupts one). Dev servers and watchers run in the background in their own terminals and appear above the message box with Stop. Every file the agent changes is listed in Source Control under <b>AI Agent</b>, next to Git’s own changes.</p></div>
           <div className="note"><Icon name="shield" size={13} /><p>To run a command yourself, switch the composer to <b>Run</b> or type <code>/run npm test</code>. Commands run with your user permissions in the project folder; output appears in the conversation and Stop cancels it. Example Edit is a deterministic demo.</p></div>
         </section>}

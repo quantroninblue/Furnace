@@ -17,7 +17,9 @@ try {
     if (await startup.waitFor({ timeout: 8000 }).then(() => true, () => false)) { await startup.click(); checks.push('startup trust prompt shown and declined'); }
     await expect(dialog).toHaveCount(0);
     const conversation = await test.webview('conversation');
-    await conversation.getByRole('button', { name: 'Build', exact: true }).click();
+    await conversation.getByLabel('Conversation draft').fill('/build');
+    await conversation.getByLabel('Conversation draft').press('Enter');
+    await expect(conversation.locator('#mode-label')).toHaveText('Build');
     await expect(conversation.getByText('Restricted Mode', { exact: true })).toBeVisible();
     await conversation.getByRole('button', { name: 'Trust Folder', exact: true }).click();
     await expect(dialog).toContainText('so the AI GUI agent can read, edit and create files and run commands');

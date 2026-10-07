@@ -9,11 +9,13 @@ const { ResearchSources } = require('../research-contract.cjs');
 const { Conversation, parseMentions } = require('./conversation.cjs');
 
 async function fixture(t, run, extra = {}, options = {}) {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workflow-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workflow-'));
     const research = { sources: new ResearchSources('test'), resetScope: async () => research.sources.reset('next'), restore: () => {}, open: async () => {} };
     const adapter = { root: () => null, workspace: () => null, clear: () => {}, files: { pending: new Map() }, captureActive: () => ({ uri: 'untitled:test', text: '' }), ...extra };
     const chat = new Conversation({ directory, session: new ProductSession(), provider: { run, dispose: async () => {} }, research, adapter, ...options });
     chat.connections.models.push({ id: 'fixture/model', name: 'Fixture' }); chat.selectModel('fixture/model');
+    // Finish pending saves and logs before removing the folder.
+    t.after(async () => { await chat.dispose(); await new Promise(resolve => setTimeout(resolve, 20)); await fs.rm(directory, { recursive: true, force: true }); });
     return chat;
 }
 async function project(t) {
@@ -32,7 +34,8 @@ test('long conversations are condensed into a visible summary; the model then se
     const chat = await fixture(t, async (request, _tools, _signal, emit) => {
         requests.push(request);
         if (request.messages.at(-1).content.startsWith('Summarize our conversation')) emit({ delta: 'SUMMARY: goals and decisions.' });
-        else emit({ delta: 'ok '.repeat(200), usage: { input: 1234, output: 50 } });
+        // Providers report about as many input tokens as the estimate (chars / 4).
+        else emit({ delta: 'ok '.repeat(200), usage: { input: Math.ceil(JSON.stringify(request.messages).length / 4), output: 50 } });
     }, {}, { contextWindow: () => 12000 });
     for (let i = 0; i < 12; i++) await chat.send(`message ${i} ${'x'.repeat(3000)}`);
     const summaries = chat.data.messages.filter(message => message.kind === 'summary');
@@ -40,13 +43,14 @@ test('long conversations are condensed into a visible summary; the model then se
     assert.match(summaries[0].content, /SUMMARY/);
     const summaryRequest = requests.find(request => request.messages.at(-1).content.startsWith('Summarize our conversation'));
     assert.equal(summaryRequest.mode, 'discuss');
-    const last = requests.at(-1);
-    assert.equal(last.messages[0].kind, 'summary');
-    assert.ok(!last.messages.some(message => message.content.startsWith('message 0 ')), 'condensed messages are no longer sent');
-    assert.match(last.messages.at(-1).content, /^message 11 /);
+    const latest = requests.at(-1);
+    assert.equal(latest.messages[0].kind, 'summary');
+    assert.ok(!latest.messages.some(message => message.content.startsWith('message 0 ')), 'condensed messages are no longer sent');
+    assert.match(latest.messages.at(-1).content, /^message 11 /);
     const usage = chat.snapshot().usage;
     assert.equal(usage.window, 12000); assert.ok(usage.used > 0 && usage.condensed >= 1);
-    assert.deepEqual(chat.data.messages.findLast(message => message.role === 'assistant').usage, { input: 1234, output: 50 });
+    const last = chat.data.messages.findLast(message => message.role === 'assistant').usage;
+    assert.equal(last.output, 50); assert.equal(last.input, last.billedInput); assert.ok(last.input > 0);
 });
 
 test('a failed summary leaves a note and older messages are no longer sent; /compact condenses on demand', async t => {
@@ -186,4 +190,95 @@ test('pasted images go with the next message only; a completed checklist ticks t
     chat.session.update('mode', 'Plan');
     await chat.send('build');
     assert.equal(chat.session.state.brief, '- [x] Add the parser\n- [ ] Run tests');
+});
+
+test('provider token counts correct the context meter, and API-key replies are priced and logged', async t => {
+    const chat = await fixture(t, async (_request, _tools, _signal, emit) => {
+        emit({ delta: 'answer', usage: { input: 1000, output: 100 } });
+        emit({ usage: { input: 1500, output: 50 }, limits: { tokens: { limit: 30000, remaining: 28000 } } });
+    });
+    chat.connections.models.push({ id: 'anthropic/claude-sonnet-5-5', name: 'Sonnet' }); chat.selectModel('anthropic/claude-sonnet-5-5');
+    await chat.send('hello');
+    const reply = chat.data.messages.at(-1);
+    assert.deepEqual(reply.usage, { input: 1500, output: 150, billedInput: 2500, first: 1000 });
+    // $2 / $10 per million: 2500 input + 150 output.
+    assert.ok(Math.abs(reply.cost - (2500 * 2 + 150 * 10) / 1e6) < 1e-12);
+    assert.ok(Math.abs(chat.snapshot().cost.total - reply.cost) < 1e-12);
+    await until(() => chat.spend.summary().today.byProvider.anthropic > 0);
+    assert.deepEqual(chat.snapshot().limits.anthropic.tokens, { limit: 30000, remaining: 28000 });
+    // Calibrated from the first call (estimate vs measured), then from the provider's own count.
+    assert.equal(chat.snapshot().usage.source, 'calibrated');
+    chat.provider.count = async () => 4321;
+    assert.equal(await chat.measure(), 4321);
+    const usage = chat.snapshot().usage;
+    assert.equal(usage.source, 'counted'); assert.equal(usage.used, 4321);
+    // Plan and local models have no dollar cost.
+    chat.selectModel('fixture/model'); await chat.send('again');
+    assert.equal(chat.data.messages.at(-1).cost, undefined);
+});
+
+test('research sources keep stable citation keys; cited replies list them and approved plans gain a Sources list', async t => {
+    const requests = [];
+    const chat = await fixture(t, async (request, _tools, _signal, emit) => {
+        requests.push(request);
+        emit({ delta: 'Use the cache [S2], not polling [S1].' });
+    });
+    const add = (id, url) => chat.research.sources.sources.set(id, { id, url, title: `Title ${id}`, text: 'body', links: [], images: [], capturedAt: '', truncated: false });
+    add('a', 'https://one.example/a'); add('b', 'https://two.example/b');
+    chat.research.sources.shared.add('b');
+    await chat.send('which?');
+    assert.match(requests[0].context, /Shared research source \[S2\] \(untrusted reference; cite it as \[S2\]\)/); assert.doesNotMatch(requests[0].context, /\[S1\]/);
+    const reply = chat.data.messages.at(-1);
+    assert.deepEqual(reply.citations.map(item => [item.key, item.url]), [['S1', 'https://one.example/a'], ['S2', 'https://two.example/b']]);
+    // Keys survive removing a source, and new sources get the next key.
+    chat.research.sources.remove('a'); add('c', 'https://three.example/c');
+    assert.deepEqual(chat.citationKeys(), { a: 'S1', b: 'S2', c: 'S3' });
+    assert.equal(chat.citationsIn('see [S1]')[0].url, 'https://one.example/a');
+    assert.equal(chat.withSourceList('- [ ] Add a cache [S2]'), '- [ ] Add a cache [S2]\n\n## Sources\n[S2]: https://two.example/b "Title b"\n');
+    assert.equal(chat.withSourceList('no citations'), 'no citations');
+});
+
+test('the timeline lists turns with changes and branches; compare and review use the recorded changes; plan checks keep evidence', async t => {
+    const { root, host } = await project(t);
+    await fs.writeFile(path.join(root, 'a.txt'), 'one\n');
+    let reviewRequest;
+    const chat = await fixture(t, async (request, tools, _signal, emit) => {
+        if (request.mode === 'discuss' && request.messages[0].id === 'review-instructions') { reviewRequest = request; emit({ delta: '- **high** a.txt:1 wrong value' }); return; }
+        const text = request.messages.at(-1).content;
+        if (text.startsWith('change')) {
+            await tools.execute('read_file', { path: 'a.txt', offset: null, limit: null });
+            await tools.execute('edit_file', { path: 'a.txt', old_string: text === 'change 1' ? 'one' : 'two', new_string: text === 'change 1' ? 'two' : 'three', replace_all: null });
+        }
+        emit({ delta: `done ${text}` });
+    }, { root: () => root, toolHost: () => host, permission: () => 'full', trusted: () => true });
+    chat.session.update('mode', 'Build');
+    await chat.send('change 1'); await chat.send('just talk'); await chat.send('change 2');
+    const first = chat.data.messages[0].id, reply = chat.data.messages[1];
+    const original = chat.data.id;
+    await chat.branch(reply.id); const branch = chat.data.id;
+    await chat.switch(original);
+    const timeline = await chat.timeline();
+    assert.equal(timeline.points.length, 3);
+    assert.deepEqual(timeline.points.map(point => [point.text, point.checkpoint, point.reply?.files]), [['change 1', true, ['a.txt']], ['just talk', false, []], ['change 2', true, ['a.txt']]]);
+    assert.ok(timeline.points[0].at > 0);
+    assert.deepEqual(timeline.points[0].branches.map(item => item.id), [branch]);
+    const compared = await chat.compareFrom(first);
+    assert.deepEqual(compared.map(entry => [entry.path, entry.before, entry.after]), [['a.txt', 'one\n', 'three\n']]);
+    // A second model reviews the first reply's diff; its notes can go back to the agent.
+    await chat.reviewChanges(reply.id);
+    const reviewed = chat.data.messages.find(item => item.id === reply.id).review;
+    assert.equal(reviewed.state, 'complete'); assert.match(reviewed.content, /wrong value/);
+    assert.match(reviewRequest.messages[1].content, /-one\n\+two/);
+    assert.deepEqual(reviewRequest.messages[1].content.match(/The user asked:\n(.*)/)[1], 'change 1');
+    await assert.rejects(chat.reviewChanges(chat.data.messages[3].id), /no changes to review/);
+    await chat.addressReview(reply.id);
+    assert.match(chat.data.messages.at(-2).content, /A second model reviewed[\s\S]*wrong value/);
+    // Plan steps: the user runs a check, or confirms a manual one; evidence is kept and ticks the step.
+    chat.session.update('brief', '- [ ] Has three (check: `grep -q three a.txt`)\n- [ ] Looks right (check: manual: open it)\n- [ ] Has four (check: `grep -q four a.txt`)');
+    await chat.checkStep('has three');
+    await chat.checkStep('has four');
+    await chat.confirmStep('looks right', true);
+    const steps = chat.planSteps();
+    assert.deepEqual(steps.map(step => [step.done, step.evidence?.status, step.evidence?.by]), [[true, 'passed', 'you'], [true, 'passed', 'you'], [false, 'failed', 'you']]);
+    assert.match(chat.session.state.brief, /- \[x\] Has three/);
 });

@@ -15,6 +15,7 @@ const call = (name, args) => ({ id: 'fc_' + name, type: 'function_call', call_id
 const reply = value => stream([{ id: 'msg_fixture', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: value, annotations: [] }] }]);
 async function fetcher(url, init) {
     if (String(url).endsWith('/models')) return Response.json({ data: [{ id: 'gpt-fixture' }] });
+    if (String(url).endsWith('/responses/input_tokens')) return Response.json({ object: 'response.input_tokens', input_tokens: Math.ceil(String(init.body).length / 4) });
     if (!String(url).endsWith('/responses')) throw new Error('Fixture forbids external network requests');
     const body = JSON.parse(init.body);
     const latest = body.input.filter(item => item.role === 'user' && !item.content.startsWith('Reference context')).at(-1)?.content || '';
@@ -30,12 +31,17 @@ async function fetcher(url, init) {
     }
     if (body.instructions.includes('Current mode: plan') && !output('plan_propose')) return stream([call('plan_propose', { text: 'Migrated planning brief.', reason: 'Review this plan.' })]);
     if (body.instructions.includes('Current mode: research') && !output('research_sources')) return stream([call('research_sources', {})]);
+    // Inline edit: the replacement is the selection in capitals.
+    const selected = /Selected code to replace:\n```\n([\s\S]*?)\n```/.exec(latest);
+    if (selected && latest.includes('Instruction: shout')) return reply('```\n' + selected[1].toUpperCase() + '\n```');
     if (latest === 'forbidden' && !output('read_file')) return stream([call('read_file', { path: 'sample.txt', offset: null, limit: null })]);
     return reply('Fixture reply. ' + (output('research_sources') || output('read_file') || body.input.filter(item => item.role === 'user' && item.content.startsWith('Reference context')).map(item => item.content).join('\n')));
 }
 exports.dependencies = () => {
     const remote = require('../main/remote-models.ts');
-    return { remote: { ...remote, remoteModels: (provider, key) => remote.remoteModels(provider, key, fetcher), remoteChat: (provider, key, request, signal, emit, tools) => remote.remoteChat(provider, key, request, signal, emit, tools, fetcher) },
+    return { remote: { ...remote, remoteModels: (provider, key) => remote.remoteModels(provider, key, fetcher), remoteChat: (provider, key, request, signal, emit, tools) => remote.remoteChat(provider, key, request, signal, emit, tools, fetcher),
+        // Token counts and spend never reach the real providers in tests.
+        remoteCount: (provider, key, request, tools) => remote.remoteCount(provider, key, request, tools, fetcher), organizationSpend: async () => 0 },
         ollama: { listModels: async () => [] }, claude: { findClaude: async () => null, claudeStatus: async () => ({ installed: false, connected: false }) } };
 };
 exports.fetcher = fetcher;

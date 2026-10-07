@@ -66,7 +66,7 @@ export class Sessions {
   /** Starts a new active session holding a copy of `messages` from `source` (a branch). */
   branch(source: Session, messages: Session["messages"], root: string | null) {
     this.root = root;
-    this.active = { ...this.blank(), model: source.model, plan: source.plan, sources: source.sources, messages, branchOf: source.id, customTitle: `${(source.customTitle || source.title || "Conversation").slice(0, 80)} (branch)` };
+    this.active = { ...this.blank(), model: source.model, plan: source.plan, sources: source.sources, messages, evidence: source.evidence, citations: source.citations, branchOf: source.id, branchAt: messages.at(-1)?.id, customTitle: `${(source.customTitle || source.title || "Conversation").slice(0, 80)} (branch)` };
     return this.active;
   }
   /** Renames a saved conversation that is not the active one (the active one saves its own title). */
@@ -111,7 +111,8 @@ export class Sessions {
     for (const file of files.filter(file => file.endsWith(".json"))) {
       try {
         const saved = await this.read(file.slice(0, -5));
-        if (saved.projectRoot === root) sessions.push({ id: saved.id, title: saved.title, createdAt: saved.createdAt, updatedAt: saved.updatedAt, projectRoot: root, model: saved.model, messageCount: saved.messages.length });
+        if (saved.projectRoot === root) sessions.push({ id: saved.id, title: saved.title, createdAt: saved.createdAt, updatedAt: saved.updatedAt, projectRoot: root, model: saved.model, messageCount: saved.messages.length,
+          ...(saved.branchOf ? { branchOf: saved.branchOf, branchAt: saved.branchAt } : {}) });
       } catch { /* One damaged history file must not hide the rest. */ }
     }
     return sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

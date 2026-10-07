@@ -6,5 +6,13 @@
     "resourceUrlTemplate": "https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}/{path}",
     "nlsBaseUrl": ""
   },
-  "linkProtectionTrustedDomains": ["https://open-vsx.org"]
+  "linkProtectionTrustedDomains": [
+    "https://open-vsx.org"
+  ],
+  "nameShort": "AI GUI",
+  "nameLong": "AI GUI",
+  "reportIssueUrl": "",
+  "licenseUrl": "",
+  "serverLicenseUrl": "",
+  "voiceWsUrl": ""
 }

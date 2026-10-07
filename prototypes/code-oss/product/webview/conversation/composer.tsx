@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatState, Mode, ResearchState, Usage } from "../protocol";
 import { Icon } from "../icons";
-import { post, setHistoryOpen, setNote, setPrefs, useStore, useSyncedText } from "../store";
+import { currentMessages, post, setHistoryOpen, setNote, setPrefs, setTimelineOpen, useStore, useSyncedText } from "../store";
+import { money } from "./messages";
 
 export const modeNotes: Record<Mode, string> = {
   Discuss: "Discuss · uses only the context you share", Plan: "Plan · reads and searches the project, proposes a brief",
@@ -38,6 +39,7 @@ function ContextMeter({ usage, busy }: { usage: Usage; busy: boolean }) {
     `Instructions and tools ~${thousands(usage.system)} · conversation ~${thousands(usage.history)} · shared context ~${thousands(usage.shared)}.`,
     usage.condensed ? `Earlier messages condensed ${usage.condensed} time${usage.condensed === 1 ? "" : "s"}.` : "Older messages are summarised automatically when the conversation fills 60% of the window.",
     usage.measured ? `Last reply: ${thousands(usage.measured.input)} input tokens measured by the provider.` : "",
+    usage.source === "counted" ? "Counted with the provider's own tokenizer." : usage.source === "calibrated" ? "Estimate corrected by the provider's count for the last reply." : "Estimated (about 4 characters per token).",
     "Click to condense the conversation now (/compact)."].filter(Boolean).join("\n");
   return (
     <button id="context-meter" className={`context-meter${percent >= 80 ? " high" : percent >= 60 ? " medium" : ""}`} disabled={busy} title={title} aria-label={`Context ${percent}% used. Condense now`}
@@ -45,6 +47,23 @@ function ContextMeter({ usage, busy }: { usage: Usage; busy: boolean }) {
       <span className="meter-track"><span className="meter-fill" style={{ width: `${Math.max(2, percent)}%` }} /></span>{percent}%
     </button>
   );
+}
+
+// What this chat and this month cost with API keys, the monthly budget, and ChatGPT plan usage.
+function Spend({ chat }: { chat: ChatState }) {
+  const month = chat.spend?.month.total || 0, budget = chat.budget || 0;
+  const plan = chat.model.startsWith("chatgpt/") ? chat.limits?.chatgpt?.plan?.find(item => item.window === "primary") : undefined;
+  const parts: string[] = [];
+  if (chat.cost) parts.push(`≈ ${money(chat.cost.total)} this chat${chat.cost.unpriced ? "+" : ""}`);
+  if (month > 0) parts.push(`${money(month)} this month`);
+  if (plan) parts.push(`plan ${Math.round(plan.usedPercent)}% used`);
+  if (!parts.length) return null;
+  const level = budget > 0 ? month >= budget ? " over" : month >= budget * 0.8 ? " near" : "" : "";
+  const title = [chat.cost ? `Estimated from provider-reported tokens at list prices${chat.cost.unpriced ? `; ${chat.cost.unpriced} repl${chat.cost.unpriced === 1 ? "y has" : "ies have"} no known price (set aiGui.pricing)` : ""}.` : "",
+    month ? `API spend from this machine this month: ${money(month)} (today ${money(chat.spend?.today.total || 0)}).` : "",
+    budget ? `Monthly budget ${money(budget)} (aiGui.budget.monthlyUsd)${level === " over" ? ": exceeded" : level === " near" ? ": over 80% used" : ""}.` : "Set a monthly budget with aiGui.budget.monthlyUsd.",
+    plan ? `ChatGPT plan: ${Math.round(plan.usedPercent)}% of the ${plan.windowMinutes ? `${Math.round(plan.windowMinutes / 60)}-hour` : "current"} window used${plan.resetSeconds ? `, resets in ${Math.ceil(plan.resetSeconds / 60)} min` : ""}.` : ""].filter(Boolean).join("\n");
+  return <span id="spend" className={`spend${level}`} title={title}>{parts.join(" · ")}{level === " over" ? " · over budget" : ""}</span>;
 }
 
 // The @mention or slash token being typed at the cursor.
@@ -86,6 +105,10 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
     ...(["Discuss", "Plan", "Build", "Research"] as Mode[]).map(modeCommand),
     simple("build-plan", "Build the shared brief step by step, ticking off its checklist", { type: "buildPlan" }),
     simple("compact", "Condense the conversation into a summary now", { type: "compact" }),
+    { name: "background", hint: "task", description: "Run a Build task in its own Git worktree while you keep working", run: arg => { if (arg) { post({ type: "backgroundStart", value: arg }); update(""); } else update("/background ", true); } },
+    { name: "timeline", description: "Jump to, compare or restore earlier points", run: () => { update(""); setTimelineOpen(true); } },
+    { name: "review", description: "Second opinion: another model reviews the last changes", run: () => { update(""); const reply = [...currentMessages()].reverse().find(message => message.changes?.files.some(file => !file.reverted)); if (reply) post({ type: "reviewChanges", messageId: reply.id }); else setNote("No agent changes to review yet."); } },
+    simple("edit", "Inline edit: change the selected code in the editor", { type: "inlineEdit" }),
     simple("connections", "Connect ChatGPT, Claude, API keys or Ollama", { type: "connections" }),
     { name: "permissions", hint: "ask|auto|full", description: "Change what the agent may do without asking", run: arg => { update(""); if (arg === "ask" || arg === "auto" || arg === "full") post({ type: "permission", value: arg }); else document.getElementById("permission")?.focus(); } },
     simple("attach", "Import files as context", { type: "attach" }),
@@ -95,6 +118,7 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
     simple("tour", "Show the getting started guide", { type: "tourShow" }),
     simple("keys", "Show and change keyboard shortcuts", { type: "keys" }),
     simple("diagnostics", "Copy diagnostics for a bug report", { type: "diagnostics" }),
+    simple("feedback", "Send feedback about AI GUI", { type: "feedback" }),
     { name: "zoom", hint: "in|out|reset", description: "Make all text larger or smaller", run: arg => { update(""); post({ type: arg === "out" ? "textSmaller" : arg === "reset" ? "textReset" : "textLarger" }); } },
     { name: "help", description: "Show these commands", run: () => update("/", true) },
   ];
@@ -207,6 +231,7 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
           {chat.attachments.map(item => <Chip key={item.id} label={item.readable ? item.name : `${item.name} · file only`} on={item.shared} disabled={!item.readable}
             title={item.readable ? undefined : "No extracted text; this file cannot be shared as context."}
             toggle={() => post({ type: "attachmentShare", id: item.id, enabled: !item.shared })} remove={() => post({ type: "attachmentRemove", id: item.id })} />)}
+          {chat.untrusted?.length > 0 && <span id="untrusted" className="context-chip untrusted" title={`Untrusted content is in this chat: ${chat.untrusted.join(", ")}. Commands and web access always ask, and “always allow” is off. Start a new chat or stop sharing the source to clear it.`}>⚠ Untrusted content in this chat</span>}
           {chat.images.map(item => <Chip key={item.id} label={`🖼 ${item.name}`} on title="Pasted image: sent with your next message only." toggle={() => {}} remove={() => post({ type: "removeImage", id: item.id })} />)}
         </div>
       </div>
@@ -249,7 +274,7 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
             : <button id="send" className="send-button" aria-label="Send" title="Send (Enter)" disabled={!canSend} onClick={submit}><Icon name="up" size={15} /></button>}
         </div>
       </div>
-      <div className="composer-hint"><span id="billing">{billing}</span>{chat.usage && !run ? <ContextMeter usage={chat.usage} busy={chat.busy} /> : <span title="Enter sends · Shift+Enter adds a line · Escape stops">/ for commands</span>}</div>
+      <div className="composer-hint"><span id="billing">{billing}</span>{!run && <Spend chat={chat} />}{chat.usage && !run ? <ContextMeter usage={chat.usage} busy={chat.busy} /> : <span title="Enter sends · Shift+Enter adds a line · Escape stops">/ for commands</span>}</div>
     </>
   );
 }

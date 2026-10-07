@@ -3,14 +3,17 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { RemoteProvider } from "../shared/types";
 
+/** API keys, plus optional admin keys that only read organization spend. */
+export type KeyName = RemoteProvider | `${RemoteProvider}-admin`;
+
 export interface KeyCipher { available(): boolean; encrypt(value: string): Buffer; decrypt(value: Buffer): string }
 export class ProviderKeys {
-  private memory = new Map<RemoteProvider, { key: string; storage: "encrypted" | "session" }>();
+  private memory = new Map<KeyName, { key: string; storage: "encrypted" | "session" }>();
   constructor(private directory: string, private cipher: KeyCipher) {}
   secureStorage() { return this.cipher.available(); }
-  private file(provider: RemoteProvider) { return path.join(this.directory, `${provider}.bin`); }
+  private file(provider: KeyName) { return path.join(this.directory, `${provider}.bin`); }
   async load() {
-    for (const provider of ["openai", "anthropic"] as const) {
+    for (const provider of ["openai", "anthropic", "openai-admin", "anthropic-admin"] as const) {
       if (!this.cipher.available()) continue;
       try {
         const file = this.file(provider);
@@ -19,8 +22,8 @@ export class ProviderKeys {
       } catch { /* Locked keychain or missing key: reconnect from the UI. */ }
     }
   }
-  get(provider: RemoteProvider) { return this.memory.get(provider); }
-  async set(provider: RemoteProvider, key: string, remember: boolean) {
+  get(provider: KeyName) { return this.memory.get(provider); }
+  async set(provider: KeyName, key: string, remember: boolean) {
     if (typeof key !== "string" || key.trim().length < 8 || key.length > 4096 || /[\r\n\0]/.test(key)) throw new Error("Enter a valid API key.");
     const storage = remember ? "encrypted" : "session";
     if (remember && !this.cipher.available()) throw new Error("Secure storage is unavailable. Use a key for this app session instead.");
@@ -33,5 +36,5 @@ export class ProviderKeys {
     } else await fs.rm(this.file(provider), { force: true });
     this.memory.set(provider, { key: key.trim(), storage });
   }
-  async remove(provider: RemoteProvider) { await fs.rm(this.file(provider), { force: true }); this.memory.delete(provider); }
+  async remove(provider: KeyName) { await fs.rm(this.file(provider), { force: true }); this.memory.delete(provider); }
 }

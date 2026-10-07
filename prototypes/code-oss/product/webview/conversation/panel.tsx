@@ -1,21 +1,22 @@
 import { useMemo } from "react";
 import type { Mode } from "../protocol";
 import { Icon, type IconName } from "../icons";
-import { post, setHistoryOpen, useStore } from "../store";
+import { post, setHistoryOpen, setTimelineOpen, useStore } from "../store";
 import { tourSteps } from "../tour";
 import { Composer, modeNotes } from "./composer";
+import { TimelinePane } from "./timeline";
 import { MessageList } from "./messages";
 import { HistoryPane } from "./history";
 
 const modes: Mode[] = ["Discuss", "Plan", "Build", "Research"];
 const suggestions = ["Help me shape the project brief.", "Talk through the tradeoffs with me.", "Review the file I’m working on."];
 
-function Tool({ type, label, icon, title }: { type: "newChat" | "connections" | "home"; label: string; icon: IconName; title: string }) {
+function Tool({ type, label, icon, title }: { type: "newChat"; label: string; icon: IconName; title: string }) {
   return <button className="icon-button" aria-label={label} title={title} onClick={() => post({ type })}><Icon name={icon} /></button>;
 }
 
 export function ConversationPanel() {
-  const data = useStore(value => value.data), messages = useStore(value => value.messages), note = useStore(value => value.note), historyOpen = useStore(value => value.historyOpen);
+  const data = useStore(value => value.data), messages = useStore(value => value.messages), note = useStore(value => value.note), historyOpen = useStore(value => value.historyOpen), timelineOpen = useStore(value => value.timelineOpen);
   const chat = data?.chat;
   // Model lists arrive with every update; keep one reference so message rows stay memoized.
   const modelsKey = JSON.stringify(chat?.connections.models || []);
@@ -25,23 +26,19 @@ export function ConversationPanel() {
   const steps = tourSteps(data), done = steps.filter(step => step.done).length;
   return (
     <div className="conversation" onKeyDown={event => {
-      if (event.key === "Escape" && chat.busy && !event.defaultPrevented && !historyOpen) post({ type: "stop" });
+      if (event.key === "Escape" && chat.busy && !event.defaultPrevented && !historyOpen && !timelineOpen) post({ type: "stop" });
       // Alt+1…4 switch modes.
       if (event.altKey && !event.ctrlKey && !event.metaKey && /^Digit[1-4]$/.test(event.code)) { event.preventDefault(); post({ type: "mode", value: modes[Number(event.code.slice(5)) - 1] }); }
     }}>
       <header className="conversation-head">
-        <div className="conversation-title"><strong id="chat-title">{chat.title || "New conversation"}</strong><span id="scope">{data.scope}</span></div>
+        <div className="conversation-title"><strong id="chat-title">{chat.title || "New conversation"}</strong>
+          <span id="scope"><span id="mode-label" className="mode-label" title={`${modeNotes[mode]}. Choose Start, Plan, Build or Research in the Workspace view to change it (Alt+1…4, Ctrl+Alt+M).`}>{mode}</span>{data.scope}</span></div>
         <div className="tools">
           <Tool type="newChat" label="New Chat" icon="plus" title="New chat (/new, Ctrl+Alt+N)" />
+          <button className="icon-button" aria-label="Timeline" aria-pressed={timelineOpen} title="Timeline: jump, compare or restore (/timeline)" onClick={() => setTimelineOpen(!timelineOpen)}><Icon name="timeline" /></button>
           <button className="icon-button" aria-label="Chat History" aria-pressed={historyOpen} title="Chat history (/history, Ctrl+Alt+H)" onClick={() => setHistoryOpen(!historyOpen)}><Icon name="history" /></button>
-          <Tool type="connections" label="Connections" icon="plug" title="Connections (/connections)" />
-          <Tool type="home" label="Open Workspace" icon="layout" title="Workspace view: plan, research, rules and activity (Ctrl+Alt+W)" />
         </div>
       </header>
-      <nav className="modes" aria-label="Workspace modes">
-        {modes.map((item, index) => <button key={item} aria-pressed={item === mode} title={`${modeNotes[item]} (Alt+${index + 1})`} onClick={() => post({ type: "mode", value: item })}>{item}</button>)}
-      </nav>
-      <p id="mode-note" className="mode-note">{modeNotes[mode]}</p>
       {data.review.pending && (
         <div className="review-bar">
           <span><Icon name="shield" size={13} /> Reviewed edit ready</span>
@@ -51,7 +48,7 @@ export function ConversationPanel() {
           </div>
         </div>
       )}
-      {historyOpen ? <HistoryPane /> : (
+      {historyOpen ? <HistoryPane /> : timelineOpen ? <TimelinePane busy={chat.busy} /> : (
         <MessageList messages={messages} models={models} busy={chat.busy || chat.switching}>
           {!messages.length && (
             <div id="empty-chat" className="chat-empty">

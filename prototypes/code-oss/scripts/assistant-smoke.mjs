@@ -18,7 +18,8 @@ try {
     await test.launch(workspace, ['--extensionTestsPath', path.join(root, 'fixtures/assistant-tests.cjs'), '--disable-workspace-trust']);
     await stage('connections-ready');
     const panel = await test.webview('conversation');
-    await panel.getByRole('button', { name: 'Connections', exact: true }).click();
+    await panel.getByLabel('Conversation draft').fill('/connections');
+    await panel.getByLabel('Conversation draft').press('Enter');
     const home = await test.webview('home');
     await home.getByRole('tab', { name: 'API keys', exact: true }).click();
     await home.getByLabel('API key', { exact: true }).fill('test-only-key');

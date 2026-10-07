@@ -6,8 +6,21 @@ import { Icon } from "../icons";
 import { Steps, duration, useNow } from "./steps";
 import { Changes } from "./changes";
 
-const proposalLabel = { file: "File change", plan: "Plan", command: "Command", browse: "Page" } as const;
-const approveLabel = { file: "Review Changes", plan: "Apply Plan", command: "Run Proposed Command", browse: "Open Page" } as const;
+const proposalLabel = { file: "File change", plan: "Plan", command: "Command", browse: "Page", verify: "Check this yourself" } as const;
+const approveLabel = { file: "Review Changes", plan: "Apply Plan", command: "Run Proposed Command", browse: "Open Page", verify: "It Works" } as const;
+const discardLabel = (kind: string) => kind === "verify" ? "It Doesn’t" : "Discard";
+export const money = (value: number) => value >= 1 ? `$${value.toFixed(2)}` : value >= 0.01 ? `$${value.toFixed(3)}` : value > 0 ? "<$0.01" : "$0";
+// [S1] citations become links to their sources (Markdown reference definitions).
+const withCitations = (message: ChatMessage) => message.citations?.length
+  ? `${message.content}\n\n${message.citations.map(item => `[${item.key}]: ${item.url}`).join("\n")}\n` : message.content;
+function Sources({ citations }: { citations: NonNullable<ChatMessage["citations"]> }) {
+  return (
+    <div className="citations" aria-label="Sources cited">
+      <span className="context-label">SOURCES</span>
+      {citations.map(item => <a key={item.key} href={item.url} title={item.url}><b>{item.key}</b> {item.title}</a>)}
+    </div>
+  );
+}
 
 // What the agent is doing right now, for the byline of a live reply.
 function liveState(message: ChatMessage) {
@@ -43,10 +56,12 @@ const Message = memo(function Message({ message, models, busy, latest, condensed
   const ended = message.state && !message.error && !["streaming", "running", "complete"].includes(message.state);
   const waiting = (message.steps || []).some(step => step.status === "waiting");
   return (
-    <article className={`message ${message.role}${command ? " command" : ""}${condensed ? " condensed-out" : ""}`}>
+    <article id={`message-${message.id}`} className={`message ${message.role}${command ? " command" : ""}${condensed ? " condensed-out" : ""}`}>
       <div className="message-byline">
         <span className={user ? "user-avatar" : "small-avatar"}>{user ? (command ? "$" : "Y") : command ? ">_" : "✦"}</span>
         <strong>{name}</strong>
+        {!live && typeof message.cost === "number" && <span className="message-cost" title={`Estimated API cost of this reply: ${message.usage?.billedInput ?? message.usage?.input ?? 0} input and ${message.usage?.output ?? 0} output tokens at list prices`}>{money(message.cost)}</span>}
+        {user && message.untrusted?.length ? <span className="untrusted-mark" title={`Sent with untrusted content: ${message.untrusted.join(", ")}`}>⚠ untrusted context</span> : null}
         {live && <span className="live-state">{liveState(message)}{message.startedAt ? ` · ${duration(now - message.startedAt)}` : ""}</span>}
         {!live && !busy && !command && (
           <span className="message-actions">
@@ -64,13 +79,14 @@ const Message = memo(function Message({ message, models, busy, latest, condensed
         {message.cwd && user && <small className="muted">{message.cwd}</small>}
         {message.steps?.length ? <Steps steps={message.steps} finished={!live} startedAt={message.startedAt} endedAt={message.endedAt} /> : null}
         {message.content || !message.state
-          ? command ? <pre className="command-output">{message.content}</pre> : user ? <div className="message-text">{message.content}</div> : <MarkdownText text={message.content} />
+          ? command ? <pre className="command-output">{message.content}</pre> : user ? <div className="message-text">{message.content}</div> : <MarkdownText text={withCitations(message)} />
           : message.state === "streaming" && !waiting ? <span className="muted">…</span> : null}
         {(message.mentions?.length || message.images?.length) ? <div className="message-attachments">
           {message.mentions?.map(item => <span key={item.path} className={`attachment-chip ${item.kind}`} title={item.error || (item.kind === "file" ? `${item.lines} lines shared${item.truncated ? " (first 40,000 characters)" : ""}` : item.kind === "folder" ? `${item.entries} entries listed` : "Not shared")}>
             <Icon name={item.kind === "folder" ? "folder" : "file"} size={11} />@{item.path}{item.kind === "blocked" || item.kind === "skipped" ? " · not shared" : ""}</span>)}
           {message.images?.map(item => <span key={item.id} className="attachment-chip" title={`${item.mime} · ${kb(item.size)}`}><Icon name="image" size={11} />{item.name}</span>)}
         </div> : null}
+        {!user && message.citations?.length ? <Sources citations={message.citations} /> : null}
         {message.contextNote && <small className="context-note">{message.contextNote}</small>}
         {message.activity?.length && !message.steps?.length ? <p className="tool-activity">{message.activity.join(" · ")}</p> : null}
         {(ended || message.exitCode !== undefined) && <small className="command-exit">{[ended ? message.state : "", message.exitCode !== undefined ? `exit ${message.exitCode}` : ""].filter(Boolean).join(" · ")}</small>}
@@ -79,11 +95,11 @@ const Message = memo(function Message({ message, models, busy, latest, condensed
           <div key={proposal.id} className="proposal-card">
             <strong>{proposalLabel[proposal.kind] || proposal.kind}: {proposal.path || proposal.reason}</strong>
             {proposal.reason && proposal.path && <p>{proposal.reason}</p>}
-            <details><summary>View proposal</summary><pre>{proposal.text}</pre></details>
+            {proposal.kind === "verify" ? <p className="verify-check">{proposal.text}</p> : <details><summary>View proposal</summary><pre>{proposal.text}</pre></details>}
             {proposal.status === "pending"
               ? <div className="row">
                   <button className="primary" disabled={busy} onClick={() => post({ type: "approveProposal", id: proposal.id })}>{approveLabel[proposal.kind]}</button>
-                  <button className="ghost" onClick={() => post({ type: "discardProposal", id: proposal.id })}>Discard</button>
+                  <button className="ghost" onClick={() => post({ type: "discardProposal", id: proposal.id })}>{discardLabel(proposal.kind)}</button>
                 </div>
               : <small>{proposal.status || "expired"}</small>}
           </div>
