@@ -5,15 +5,16 @@ import path from "node:path";
 import type { ClaudeStatus, ChatEvent } from "../shared/types";
 import type { ChatRequest } from "./remote-models";
 import type { AgentTools } from "./agent-tools";
-import { agentInstructions, chatHistory } from "./agent-context";
+import { agentInstructions, chatHistory, imageLabel } from "./agent-context";
 import { workspaceMcp, mcpServerName } from "./workspace-mcp";
+import { textBlocks } from "./text-blocks";
 
 import { claudeModels } from "./claude-discovery";
 export { claudeModels, findClaude, claudeStatus } from "./claude-discovery";
 
-export function claudeArguments(model: string, config: string, instructions: string, tools: AgentTools) {
+export function claudeArguments(model: string, config: string, instructions: string, tools: AgentTools, images = false) {
   if (!claudeModels.some(item => item.id === model)) throw new Error("Choose a Claude model in Connections.");
-  return ["--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--restricted", "--tools", "", "--disable-slash-commands", "--strict-mcp-config", "--mcp-config", config, "--no-chrome", "--no-session-persistence", "--setting-sources", "", "--settings", JSON.stringify({ disableAllHooks: true, autoMemoryEnabled: false }), "--system-prompt-file", instructions, "--permission-mode", "dontAsk", "--max-turns", "100", ...(tools.definitions.length ? ["--allowedTools", tools.definitions.map(tool => `mcp__${mcpServerName}__${tool.function.name}`).join(",")] : []), ...(model !== "default" ? ["--model", model] : [])];
+  return ["--print", "--output-format", "stream-json", "--verbose", "--include-partial-messages", ...(images ? ["--input-format", "stream-json"] : []), "--restricted", "--tools", "", "--disable-slash-commands", "--strict-mcp-config", "--mcp-config", config, "--no-chrome", "--no-session-persistence", "--setting-sources", "", "--settings", JSON.stringify({ disableAllHooks: true, autoMemoryEnabled: false }), "--system-prompt-file", instructions, "--permission-mode", "dontAsk", "--max-turns", "100", ...(tools.definitions.length ? ["--allowedTools", tools.definitions.map(tool => `mcp__${mcpServerName}__${tool.function.name}`).join(",")] : []), ...(model !== "default" ? ["--model", model] : [])];
 }
 
 // CLI credentials stay under Claude Code's ownership. No SDK, token extraction,
@@ -32,7 +33,7 @@ export async function claudeChat(file: string, directory: string, request: ChatR
     await fs.writeFile(instructions, agentInstructions(request.mode ?? "discuss", request.permission, request.environment), { mode: 0o600 });
     signal.throwIfAborted();
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(file, claudeArguments(request.model, config, instructions, tools), { cwd: temp, detached: process.platform !== "win32", windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, MCP_TOOL_TIMEOUT: String(timeoutMs) } });
+      const child = spawn(file, claudeArguments(request.model, config, instructions, tools, !!request.images?.length), { cwd: temp, detached: process.platform !== "win32", windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, MCP_TOOL_TIMEOUT: String(timeoutMs) } });
       let buffer = "", bytes = 0, textSize = 0, streamed = false, result = false, failure: Error | undefined, finished = false;
       let force: ReturnType<typeof setTimeout> | undefined;
       const kill = (hard: boolean) => {
@@ -49,7 +50,8 @@ export async function claudeChat(file: string, directory: string, request: ChatR
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
       const timeout = setTimeout(() => stop("Claude Code timed out. Retry manually; no other connection was used."), timeoutMs);
-      const delta = (value: string) => { textSize += value.length; if (textSize > 512000) stop("Claude Code output limit reached."); else emit({ id: request.id, delta: value }); };
+      const blocks = textBlocks(value => { textSize += value.length; if (textSize > 512000) stop("Claude Code output limit reached."); else emit({ id: request.id, delta: value }); });
+      const delta = blocks.text;
       const line = (text: string) => {
         if (!text.trim() || failure) return;
         let event: any;
@@ -64,6 +66,12 @@ export async function claudeChat(file: string, directory: string, request: ChatR
           const allowed = new Set(["EndConversation", ...tools.definitions.map(tool => `mcp__${mcpServerName}__${tool.function.name}`)]);
           if (event.tools.some((tool: unknown) => typeof tool !== "string" || !allowed.has(tool))) { stop("Claude Code loaded tools outside this mode. The turn was stopped; check managed CLI settings."); return; }
         }
+        if (event.type === "stream_event" && event.event?.type === "content_block_start") blocks.boundary();
+        if (event.type === "stream_event" && event.event?.type === "message_start" && event.event.message?.usage) {
+          const usage = event.event.message.usage;
+          emit({ id: request.id, usage: { input: (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0) } });
+        }
+        if (event.type === "stream_event" && event.event?.type === "message_delta" && typeof event.event.usage?.output_tokens === "number") emit({ id: request.id, usage: { output: event.event.usage.output_tokens } });
         if (event.type === "stream_event" && event.event?.type === "content_block_delta" && event.event.delta?.type === "text_delta" && typeof event.event.delta.text === "string") { streamed = true; delta(event.event.delta.text); }
         if (event.type === "result") {
           if (event.is_error || event.subtype !== "success") { stop("Claude Code could not complete this turn. Check its sign-in, model access, usage limits, and connection. No API fallback was attempted."); return; }
@@ -90,7 +98,11 @@ export async function claudeChat(file: string, directory: string, request: ChatR
         else if (code !== 0 || !result) reject(new Error("Claude Code exited without a completed reply. Check its sign-in and installation."));
         else resolve();
       });
-      child.stdin.end(`Continue this conversation and answer the user's latest request. The JSON contains conversation history and shared reference context:\n${JSON.stringify(chatHistory(request.messages, request.context))}`);
+      const prompt = `Continue this conversation and answer the user's latest request. The JSON contains conversation history and shared reference context:\n${JSON.stringify(chatHistory(request.messages, request.context))}`;
+      // Images need structured input; plain text otherwise.
+      child.stdin.end(request.images?.length
+        ? JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: `${prompt}\n\n${imageLabel}` }, ...request.images.map(image => ({ type: "image", source: { type: "base64", media_type: image.mime, data: image.data } }))] } }) + "\n"
+        : prompt);
     });
   } finally { turnController.abort(); await bridge.close(); if (temp) await fs.rm(temp, { recursive: true, force: true }); }
 }

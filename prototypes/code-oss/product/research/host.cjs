@@ -8,8 +8,18 @@ const { extractionScript } = require('./extract.cjs');
 const { browserURL } = require('../../../shared/research-url.cjs');
 const { frames, send } = require('../research-transport.cjs');
 
+// Electron's graceful exit can hang in native teardown after JavaScript has finished, and
+// when the extension host is gone nobody else would kill the companion. A companion that
+// leads its own process group (spawned by the transport) therefore ends that group outright;
+// nothing needs flushing, as the session is ephemeral and the profile is removed first.
+function exitNow(profile) {
+    try { rmSync(profile, { recursive: true, force: true }); } catch { /* Parent also cleans after exit. */ }
+    try { process.kill(-process.pid, 'SIGKILL'); } catch { process.kill(process.pid, 'SIGKILL'); }
+}
+exports.exitNow = exitNow;
+
 // Only the local controls get a preload; remote content gets no page bridge.
-async function startHost({ pipe, host, scope, page: pageId, profile }) {
+async function startHost({ pipe, host, scope, page: pageId, profile, hardExit = false }) {
     let window, view, closing = false, publishTimer;
     const state = { host, scope, page: pageId, generation: 0, url: '', title: '',
         loading: false, back: false, forward: false, opened: false, error: '' };
@@ -22,7 +32,8 @@ async function startHost({ pipe, host, scope, page: pageId, profile }) {
         if (closing) return;
         closing = true; clearTimeout(publishTimer);
         page()?.close({ waitForBeforeUnload: false });
-        window?.destroy(); pipe.destroy(); app.exit(0);
+        window?.destroy(); pipe.destroy();
+        if (hardExit) exitNow(profile); else app.exit(0);
     };
     pipe.on('end', shutdown); pipe.on('error', shutdown);
     process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);

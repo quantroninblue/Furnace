@@ -81,7 +81,7 @@ in the status bar, or by typing `/connections`. Choose a tab:
 | Tab | What you need | Billing |
 | --- | --- | --- |
 | **ChatGPT** | A ChatGPT account. Choose **Continue with ChatGPT** and finish sign-in in your browser. | Your ChatGPT plan |
-| **Claude** | [Claude Code](https://code.claude.com) 2.1.248 or newer installed. Choose **Sign In with Claude Code**, finish in the terminal that opens (paste the browser code there if asked); connections refresh by themselves. If Claude Code is already signed in, just refresh. | Your Claude account |
+| **Claude** | [Claude Code](https://code.claude.com) 2.1.248 or newer installed. Choose **Sign In with Claude Code**, finish in the terminal that opens (paste the browser code there if asked); connections refresh by themselves. If Claude Code is already signed in, it connects automatically when the app starts. | Your Claude account |
 | **Local** | [Ollama](https://ollama.com) running with a model installed. For agent work, pick a model that supports tool calling (for example Qwen or Llama 3.1+). | Free, runs on your machine |
 | **API keys** | An OpenAI or Anthropic API key. Tick **Remember securely** to keep it between sessions. | Provider API billing |
 
@@ -149,14 +149,38 @@ you, with a reason.
 When the agent asks, you'll see **Approve**, **Always allow … in this chat**,
 **Deny** and, for file changes, **Open Diff** to view the change in the editor.
 
+### Review, revert and rewind
+
+Every reply that changed files ends with a **Changed files** list showing what was
+added (A), modified (M) or deleted (D), with line counts.
+
+- Click a file, or **Review**, to open a diff of what the agent changed.
+- The ↶ button next to a file puts just that file back as it was before the reply;
+  **Revert All** does it for every file in the reply.
+- To undo a whole exchange, hover over one of your messages and click ↶ **Rewind to
+  here**. That message and everything after it are removed, files the agent changed
+  since then are restored, and your message goes back into the box to edit and resend.
+- If you edited a file after the agent did, AI GUI warns you before overwriting your
+  changes.
+- Changes made by **commands** the agent ran (for example `npm install`) are not
+  tracked and are not undone.
+- A multi-file patch is all or nothing: if one file fails, the others are put back.
+
 ### Undo and safety
 
 - Edits go through the editor, so **Undo** works and open files update instantly.
 - If a file has unsaved changes of yours, the agent's edit lands in the editor but
   is not saved for you.
 - Deleted files go to your system trash.
-- **Stop** (the square button) cancels the reply, any running command and any
-  pending approvals.
+- **Stop** (the square button, or **Escape** in the conversation panel) cancels the
+  reply, any running command and any pending approvals.
+
+### Replies
+
+Replies are formatted (headings, lists, tables, highlighted code). Code blocks have
+**Copy** and **Insert**, which puts the code at the cursor in your current editor
+(Undo reverses it). Finished work collapses into one line such as *Worked for 1m 05s ·
+15 steps*; click it to see each step. Replies never load remote images or run HTML.
 
 ## Research
 
@@ -202,7 +226,7 @@ Type `/` in the message box for the command list:
 | `/tour` | Show the Getting started guide again |
 | `/zoom [in\|out\|reset]` | Make all text larger or smaller |
 
-- **Enter** sends; **Shift+Enter** adds a new line.
+- **Enter** sends; **Shift+Enter** adds a new line; **Escape** stops a running reply.
 - **Text size:** AI GUI starts at 120% zoom. Use **Text size A− / A+** at the top of
   the workspace page, `/zoom`, or `Ctrl+=` / `Ctrl+-` to adjust it.
 - The **Ask / Run** switch in the message box toggles between talking to the agent

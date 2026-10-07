@@ -13,7 +13,9 @@ app.setPath('sessionData', profile);
 app.enableSandbox();
 app.commandLine.appendSwitch('ozone-platform', 'x11');
 const pipe = new Socket({ fd: 3, readable: true, writable: true });
-const quit = () => app.exit(0);
+// Same shutdown as the production host: end the companion's own process group.
+const { exitNow } = require('../product/research/host.cjs');
+const quit = () => exitNow(profile);
 pipe.on('end', quit); pipe.on('error', quit);
 app.on('quit', () => rmSync(profile, { recursive: true, force: true }));
 let window;

@@ -89,47 +89,58 @@ export function runCommand(
   return { stop, done };
 }
 
-// Agent-requested commands. The tool layer decides approval and sandboxing first;
-// this runner captures output for the model, enforces the timeout and kills the
-// whole process group on stop.
-export function runAgentCommand(
-  command: string,
-  options: { cwd: string; timeoutMs: number; signal: AbortSignal; sandbox?: { helper: string; writable: string[] }; onOutput?: (text: string) => void },
-): Promise<{ exitCode: number | null; output: string; timedOut: boolean }> {
+/** Mirrors an agent command in an IDE terminal; the user can interrupt it from there. */
+export interface TerminalMirror { write(text: string): void; exit(code: number | null): void; onInterrupt(listener: () => void): void; show?(): void }
+export interface CommandTerminals { open(command: string, cwd: string, background: boolean): TerminalMirror | null }
+export type SandboxSpec = { helper: string; writable: string[] };
+
+// Starts an agent command in its own process group, optionally inside the sandbox helper.
+export function spawnAgentShell(command: string, options: { cwd: string; sandbox?: SandboxSpec }) {
   const windows = process.platform === "win32";
   const shell = windows ? process.env.COMSPEC || "cmd.exe" : "/bin/bash";
   const shellArgs = windows ? ["/d", "/s", "/c", command] : ["-c", command];
   const [file, args] = options.sandbox
     ? [options.sandbox.helper, [...options.sandbox.writable.flatMap((dir) => ["--write", dir]), "--", shell, ...shellArgs]]
     : [shell, shellArgs];
+  const child = spawn(file, args, {
+    cwd: options.cwd, detached: !windows, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, TERM: "dumb", NO_COLOR: "1", GIT_TERMINAL_PROMPT: "0", PAGER: "cat", GIT_PAGER: "cat", CI: process.env.CI ?? "1" },
+  });
+  const kill = (signal: NodeJS.Signals) => {
+    if (!child.pid) return;
+    if (windows) spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).on("error", () => child.kill());
+    else try { process.kill(-child.pid, signal); } catch { /* Already exited. */ }
+  };
+  child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+  return { child, kill, stop: () => { kill("SIGTERM"); setTimeout(() => kill("SIGKILL"), 2000).unref(); } };
+}
+
+// Agent-requested commands. The tool layer decides approval and sandboxing first;
+// this runner captures output for the model, enforces the timeout and kills the
+// whole process group on stop. A terminal mirror shows it live in the IDE.
+export function runAgentCommand(
+  command: string,
+  options: { cwd: string; timeoutMs: number; signal: AbortSignal; sandbox?: SandboxSpec; onOutput?: (text: string) => void; terminal?: TerminalMirror | null },
+): Promise<{ exitCode: number | null; output: string; timedOut: boolean; interrupted: boolean }> {
   return new Promise((resolve, reject) => {
     if (options.signal.aborted) { reject(options.signal.reason ?? new Error("Stopped.")); return; }
-    const child = spawn(file, args, {
-      cwd: options.cwd, detached: !windows, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, TERM: "dumb", NO_COLOR: "1", GIT_TERMINAL_PROMPT: "0", PAGER: "cat", GIT_PAGER: "cat", CI: process.env.CI ?? "1" },
-    });
-    let output = "", timedOut = false, settled = false;
-    const kill = (signal: NodeJS.Signals) => {
-      if (!child.pid) return;
-      if (windows) spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).on("error", () => child.kill());
-      else try { process.kill(-child.pid, signal); } catch { /* Already exited. */ }
-    };
-    const stop = () => { kill("SIGTERM"); setTimeout(() => kill("SIGKILL"), 2000).unref(); };
+    const { child, stop } = spawnAgentShell(command, options);
+    let output = "", timedOut = false, interrupted = false, settled = false;
     const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeoutMs);
     const abort = () => stop();
     options.signal.addEventListener("abort", abort, { once: true });
+    options.terminal?.onInterrupt(() => { interrupted = true; stop(); });
     const collect = (chunk: string) => {
       if (output.length < 4_000_000) output += chunk;
-      options.onOutput?.(chunk);
+      options.onOutput?.(chunk); options.terminal?.write(chunk);
     };
-    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
     child.stdout.on("data", collect); child.stderr.on("data", collect);
-    child.once("error", (error) => { if (!settled) { settled = true; clearTimeout(timer); options.signal.removeEventListener("abort", abort); reject(error); } });
+    child.once("error", (error) => { if (!settled) { settled = true; clearTimeout(timer); options.signal.removeEventListener("abort", abort); options.terminal?.exit(null); reject(error); } });
     child.once("close", (code) => {
       if (settled) return; settled = true;
-      clearTimeout(timer); options.signal.removeEventListener("abort", abort);
+      clearTimeout(timer); options.signal.removeEventListener("abort", abort); options.terminal?.exit(code);
       if (options.signal.aborted) { reject(options.signal.reason ?? new Error("Stopped.")); return; }
-      resolve({ exitCode: code, output, timedOut });
+      resolve({ exitCode: code, output, timedOut, interrupted });
     });
   });
 }

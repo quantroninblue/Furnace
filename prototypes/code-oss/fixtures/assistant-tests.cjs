@@ -25,12 +25,13 @@ exports.run = async () => {
         }
         // Exercise the unmodified production credential service before substituting
         // the fixture's network implementation; no credentials or inference needed.
+        await api.connectionsReady;
         const production = await chat.provider.status();
-        assert.equal(production.models.length, 0); assert(!JSON.stringify(production).includes('access_token'));
+        assert(production.connections.some(item => item.provider === 'claude-code')); assert(!JSON.stringify(production).includes('access_token'));
         const productionPid = chat.provider.child.pid;
         await chat.provider.dispose(); assert.throws(() => process.kill(productionPid, 0));
         chat.provider.options.entry = path.join(directory, 'assistant-entry.cjs');
-        checks.push('real production credential service starts, exposes status without tokens, and exits cleanly');
+        checks.push('real production credential service discovers connections on startup, exposes status without tokens, and exits cleanly');
         const file = vscode.Uri.file(path.join(directory, 'workspace/sample.txt'));
         const doc = await vscode.workspace.openTextDocument(file); const editor = await vscode.window.showTextDocument(doc, { preview: false });
         await editor.edit(edit => edit.insert(new vscode.Position(0, 0), 'Unsaved user draft.\n'));
@@ -61,6 +62,10 @@ exports.run = async () => {
         assert.deepEqual(work.steps.map(step => step.status), ['done', 'done', 'done', 'done']);
         await vscode.window.showTextDocument(doc); await vscode.commands.executeCommand('undo'); assert.equal(doc.getText(), original);
         checks.push('GUI send → SDK stream → agent reads the unsaved buffer → approved edit_file lands in the buffer (disk untouched; Undo restores) → write_file creates a folder+file under "Always allow edits" → approved run_command output returns to the model');
+        // The reply's checkpoint lists both files; the user's Undo makes sample.txt a conflict.
+        assert.deepEqual(work.changes.files.map(file => `${file.status} ${file.path} +${file.added} −${file.removed}`), ['modified sample.txt +1 −1', 'added notes/created.txt +1 −0']);
+        await assert.rejects(chat.revert(work.id, ['sample.txt']), error => error.conflicts?.[0] === 'sample.txt');
+        checks.push('turn checkpoint through the IDE host lists the edited and created files; a file the user changed since (Undo) is refused as a conflict');
         api.session.update('mode', 'Plan'); await chat.send('plan');
         const plan = [...chat.proposals.values()].find(p => p.kind === 'plan'); assert(plan); await chat.approve(plan.id);
         api.session.update('mode', 'Discuss'); chat.sharePlan = true; chat.shareEditor = true;

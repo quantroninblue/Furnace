@@ -15,7 +15,8 @@ where it lives.
 - **No telemetry or analytics.** AI GUI collects no usage data, and its launcher
   turns off the editor's built-in telemetry and update checks. The only other
   network use is what you trigger: the Extensions view (Open VSX), the research
-  browser, and web pages the agent fetches.
+  browser, and web pages the agent fetches, plus a model-list check with the
+  providers you already connected (see below).
 
 ## What is sent to AI providers
 
@@ -36,6 +37,12 @@ AI GUI never switches you to a different paid route automatically.
 
 Local models through Ollama run on your machine; requests go to Ollama's local
 address (`127.0.0.1`).
+
+To have your connections ready, AI GUI checks them when it starts, when you open a
+different folder and when you refresh Connections: it asks each provider you have
+connected (a remembered API key or ChatGPT account) for its list of models, asks your
+installed Claude Code whether it is signed in, and looks for Ollama on your machine.
+These checks send no conversation data.
 
 ## Credentials
 
@@ -63,6 +70,10 @@ All app data lives in your AI GUI profile folder (by default
 - `conversations/`: your chats, planning briefs, captured research text and
   attachment snapshots, saved as **unencrypted** JSON files. Treat them like any
   other document on your disk.
+- `conversations/checkpoints/`: for each reply in which the agent changed files, a
+  copy of those files' contents before and after the change (unencrypted), so you
+  can review, revert or rewind them. The newest 60 replies per conversation are kept.
+  These copies can include anything in the files the agent edited.
 - `connections/`: encrypted remembered keys and ChatGPT account information.
 
 Other data:

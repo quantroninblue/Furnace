@@ -18,8 +18,13 @@ exports.run = async () => {
             scope: 'session-1', env: { ...process.env, AI_GUI_RESEARCH_PROBE_MODE: mode }, timeout });
         children.push(client); return client;
     };
+    // Where a stuck companion is: process state, kernel wait channel and thread count.
+    const processState = pid => {
+        const read = file => { try { return require('node:fs').readFileSync(`/proc/${pid}/${file}`, 'utf8').trim(); } catch { return 'gone'; } };
+        return `state=${/State:\s*(.*)/.exec(read('status'))?.[1]} wchan=${read('wchan')} threads=${/Threads:\s*(\d+)/.exec(read('status'))?.[1]}`;
+    };
     const gone = async client => {
-        await Promise.race([client.exited, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('Companion did not exit')), 10000); timer.unref(); })]);
+        await Promise.race([client.exited, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error(`Companion did not exit: ${JSON.stringify(client.lifecycle)} ${processState(client.child.pid)}`)), 10000); timer.unref(); })]);
         await assert.rejects(fs.stat(client.profile), { code: 'ENOENT' });
         assert.throws(() => process.kill(client.child.pid, 0), { code: 'ESRCH' });
     };

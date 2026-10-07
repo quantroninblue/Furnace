@@ -69,7 +69,8 @@ process.stdin.on('end', async () => {
   const list = await rpc('tools/list', {});
   emit({ type:'system', subtype:'init', tools:list.result.tools.map(tool => 'mcp__ai_gui__' + tool.name), mcp_servers:[{ name:'ai_gui', status:'connected' }] });
   const result = await rpc('tools/call', { name:'plan_read', arguments:{} });
-  emit({ type:'stream_event', event:{type:'content_block_delta', delta:{type:'text_delta', text:result.result.content[0].text}} });
+  const block = text => { emit({ type:'stream_event', event:{type:'content_block_start', index:0, content_block:{type:'text', text:''}} }); emit({ type:'stream_event', event:{type:'content_block_delta', index:0, delta:{type:'text_delta', text}} }); };
+  block(result.result.content[0].text); block('Done.');
   emit({ type:'result', subtype:'success', is_error:false, result:'A collaborative brief' });
 });
 `, { mode: 0o700 });
@@ -78,7 +79,7 @@ process.stdin.on('end', async () => {
   assert.equal(JSON.stringify(status).includes("MUST_NOT_LEAK"), false);
   const events: ChatEvent[] = [];
   await claudeChat(file, dir, request, new AbortController().signal, event => events.push(event), tools());
-  assert.equal(events.map(event => event.delta ?? "").join(""), "A collaborative brief");
+  assert.equal(events.map(event => event.delta ?? "").join(""), "A collaborative brief\n\nDone.");
   assert.ok(events.some(event => event.activity === "plan_read"));
   assert.deepEqual(await fs.readdir(dir), ["claude"]);
   for (const [model, error] of [["opus", /outside this mode/], ["fable", /could not complete/], ["default", /did not load/]] as const) {

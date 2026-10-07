@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { root, upstream } from './environment.mjs';
 import { desktopTest } from './desktop-test.mjs';
 const require = createRequire(path.join(upstream, 'package.json'));
-const test = await desktopTest('assistant-smoke');
+const test = await desktopTest('assistant-smoke', { discover: true });
 let failure;
 const report = async () => JSON.parse(await readFile(path.join(test.artifacts, 'assistant-report.json'), 'utf8').catch(() => '{}'));
 const stage = async value => expect.poll(async () => { const r = await report(); if (r.stage === 'failed') throw new Error(r.error); return r.stage; }, { timeout: 90000 }).toBe(value);
@@ -38,6 +38,30 @@ try {
     await stage('command-approval');
     await panel.getByRole('button', { name: 'Approve', exact: true }).click();
     await stage('complete'); const first = await report();
+    // Nothing in the message list may be wider than the panel.
+    const wide = await panel.evaluate(() => {
+        const scroller = document.getElementById('scroller'), limit = scroller.getBoundingClientRect().left + scroller.clientWidth - parseFloat(getComputedStyle(scroller).paddingRight) + 0.5;
+        const wide = [...scroller.querySelectorAll('*')].filter(node => node.getBoundingClientRect().right > limit).slice(0, 12).map(node => `${node.tagName}.${node.className} (${Math.round(node.getBoundingClientRect().right - limit)}px): ${node.textContent.slice(0, 60)}`);
+        const walker = document.createTreeWalker(scroller, NodeFilter.SHOW_TEXT), range = document.createRange();
+        for (let node = walker.nextNode(); node && wide.length < 12; node = walker.nextNode()) {
+            range.selectNodeContents(node);
+            const right = range.getBoundingClientRect().right;
+            if (right > limit) wide.push(`text in ${node.parentElement.tagName}.${node.parentElement.className} (${Math.round(right - limit)}px): ${node.textContent.slice(0, 60)}`);
+        }
+        return scroller.scrollWidth > scroller.clientWidth ? [`scrollWidth ${scroller.scrollWidth} > ${scroller.clientWidth}`, ...wide] : wide;
+    });
+    expect(wide).toEqual([]);
+    first.checks.push('message list has no horizontal overflow');
+    // GUI: per-file revert removes the created file; Revert All reaches the conflict dialog
+    // (extension-test mode refuses modal dialogs, so the refusal names the conflict).
+    const changes = panel.locator('.changes').first();
+    await changes.getByRole('button', { name: 'Revert notes/created.txt', exact: true }).click();
+    await expect(changes.locator('li.reverted')).toHaveCount(1);
+    await expect.poll(() => readFile(path.join(test.workspace, 'notes/created.txt')).then(() => 'present', () => 'gone')).toBe('gone');
+    await changes.getByRole('button', { name: 'Revert All', exact: true }).click();
+    await expect(panel.locator('#status')).toContainText('changed since the agent edited it');
+    await expect(panel.getByRole('button', { name: 'Rewind to here' }).first()).toBeAttached();
+    first.checks.push('GUI per-file revert deletes the agent-created file; GUI Revert All detects the conflicting file before changing anything');
     await test.page.screenshot({ path: path.join(test.artifacts, 'conversation-wide.png') });
     await test.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1024, 768));
     await expect(panel.getByRole('button', { name: 'Send', exact: true })).toBeVisible();

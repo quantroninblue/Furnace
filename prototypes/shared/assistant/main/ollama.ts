@@ -1,5 +1,6 @@
-import { agentInstructions, chatHistory } from "./agent-context";
-import type { AgentMode, ChatEvent, Message } from "../shared/types";
+import { agentInstructions, chatHistory, imageLabel } from "./agent-context";
+import { OLLAMA_CONTEXT } from "./context-window";
+import type { AgentMode, ChatEvent, ImageInput, Message } from "../shared/types";
 import type { AgentTools } from "./agent-tools";
 import { MAX_ROUNDS, MAX_TOOL_CALLS } from "./remote-models";
 
@@ -23,6 +24,7 @@ type ModelMessage = {
   thinking?: string;
   tool_calls?: ToolCall[];
   tool_name?: string;
+  images?: string[];
 };
 
 export async function chat(
@@ -34,6 +36,7 @@ export async function chat(
     mode?: AgentMode;
     permission?: "ask" | "auto" | "full";
     environment?: string;
+    images?: ImageInput[];
   },
   signal: AbortSignal,
   emit: (event: ChatEvent) => void,
@@ -43,6 +46,7 @@ export async function chat(
   const messages: ModelMessage[] = [
     { role: "system", content: agentInstructions(mode, request.permission, request.environment) },
     ...chatHistory(request.messages, request.context),
+    ...(request.images?.length ? [{ role: "user", content: imageLabel, images: request.images.map(image => image.data) }] : []),
   ];
   let toolCount = 0;
   let outputSize = 0;
@@ -56,6 +60,8 @@ export async function chat(
         model: request.model,
         stream: true,
         messages,
+        // Ollama's default context is too small for agent instructions and tools.
+        options: { num_ctx: OLLAMA_CONTEXT },
         ...(tools?.definitions.length ? { tools: tools.definitions } : {}),
       }),
     });
@@ -73,6 +79,9 @@ export async function chat(
       if (!line.trim()) return;
       const event = JSON.parse(line) as {
         error?: string;
+        done?: boolean;
+        prompt_eval_count?: number;
+        eval_count?: number;
         message?: {
           content?: string;
           thinking?: string;
@@ -80,6 +89,7 @@ export async function chat(
         };
       };
       if (event.error) throw new Error(event.error);
+      if (event.done && (event.prompt_eval_count || event.eval_count)) emit({ id: request.id, usage: { input: event.prompt_eval_count, output: event.eval_count } });
       const message = event.message;
       if (message?.content) {
         outputSize += message.content.length;

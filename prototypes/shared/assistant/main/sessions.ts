@@ -26,8 +26,8 @@ export class Sessions {
   async write(data: Session, root: string | null) {
     if (!data || data.id !== this.active.id || root !== this.root) throw new Error("Session changed before saving. Previous data was not overwritten.");
     this.valid(data);
-    const first = data.messages.find(m => m.role === "user")?.content.split("\n")[0];
-    const saved: Session = { ...data, id: this.active.id, projectRoot: root, createdAt: this.active.createdAt, updatedAt: new Date().toISOString(), title: first?.slice(0, 90) || "Planning conversation" };
+    const first = data.messages.find(m => m.role === "user" && !m.kind)?.content.split("\n")[0];
+    const saved: Session = { ...data, id: this.active.id, projectRoot: root, createdAt: this.active.createdAt, updatedAt: new Date().toISOString(), title: data.customTitle || first?.slice(0, 90) || "Planning conversation" };
     const content = JSON.stringify(saved);
     if (Buffer.byteLength(content) > MAX_SESSION) throw new Error("Session exceeds the 4 MB draft limit.");
     const file = this.file(saved.id);
@@ -62,6 +62,44 @@ export class Sessions {
     if (saved.projectRoot !== root) throw new Error("Open this session's project before resuming it.");
     this.root = root; this.active = saved;
     return saved;
+  }
+  /** Starts a new active session holding a copy of `messages` from `source` (a branch). */
+  branch(source: Session, messages: Session["messages"], root: string | null) {
+    this.root = root;
+    this.active = { ...this.blank(), model: source.model, plan: source.plan, sources: source.sources, messages, branchOf: source.id, customTitle: `${(source.customTitle || source.title || "Conversation").slice(0, 80)} (branch)` };
+    return this.active;
+  }
+  /** Renames a saved conversation that is not the active one (the active one saves its own title). */
+  async rename(id: string, title: string) {
+    await this.queue;
+    const saved = await this.read(id);
+    saved.customTitle = title; saved.title = title;
+    const file = this.file(id), temp = `${file}.${randomUUID()}.tmp`;
+    try { await fs.writeFile(temp, JSON.stringify(saved), { mode: 0o600 }); await fs.rename(temp, file); }
+    finally { await fs.rm(temp, { force: true }); }
+  }
+  async remove(id: string) {
+    if (id === this.active.id) throw new Error("Switch to another conversation before deleting this one.");
+    await this.queue;
+    await fs.rm(this.file(id), { force: true });
+  }
+  /** Conversations for this project whose title or messages contain the query, newest first. */
+  async search(root: string | null, query: string): Promise<SessionSummary[]> {
+    const needle = query.trim().toLowerCase();
+    const all = await this.list(root);
+    if (!needle) return all;
+    const found: SessionSummary[] = [];
+    for (const summary of all) {
+      if (summary.title.toLowerCase().includes(needle)) { found.push(summary); continue; }
+      try {
+        const saved = await this.read(summary.id);
+        const message = saved.messages.find(item => item.content.toLowerCase().includes(needle));
+        if (!message) continue;
+        const at = message.content.toLowerCase().indexOf(needle), start = Math.max(0, at - 40);
+        found.push({ ...summary, snippet: `${start ? "…" : ""}${message.content.slice(start, at + needle.length + 60).replace(/\s+/g, " ")}…` });
+      } catch { /* Skip unreadable history. */ }
+    }
+    return found;
   }
   async list(root: string | null): Promise<SessionSummary[]> {
     await this.queue;
