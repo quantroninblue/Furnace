@@ -27,6 +27,11 @@ jobs:
       UPSTREAM: prototypes/code-oss/upstream
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # Keep LF line endings in both checkouts, as on Linux and macOS: the patches are LF, and
+      # upstream pins build/*.ts to LF while autocrlf would turn src/ into CRLF.
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
 
       - name: Read the upstream pin
