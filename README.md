@@ -353,6 +353,9 @@ Type `/` in the message box for the command list:
   `Ctrl+Alt+E` inline edit. Change them with `/keys`.
 - **Text size:** Furnace starts at 120% zoom. Use **Text size A− / A+** at the top of
   the workspace page, `/zoom`, or `Ctrl+=` / `Ctrl+-` to adjust it.
+- **Window opacity:** the window is very slightly see-through. Change it with
+  **Display → Window Opacity…** or the `aiGui.window.opacity` setting (0.5–1; 1 is
+  solid). It works on Linux with X11 and a compositing window manager.
 - The **Ask / Run** switch in the message box toggles between talking to the agent
   and running your own commands.
 - Resuming a chat restores its messages, brief, sources and attachments; shared

@@ -34,7 +34,15 @@ async function applyOpacity(opacity) {
 }
 
 function createWindowOpacity(context) {
-    const apply = () => applyOpacity(vscode.workspace.getConfiguration('aiGui').get('window.opacity', 0.96));
+    // The Display menu's slider changes the setting while dragging: run one update at a time
+    // and finish with the latest value.
+    let running = null, again = false;
+    const apply = () => {
+        if (running) { again = true; return running; }
+        running = applyOpacity(vscode.workspace.getConfiguration('aiGui').get('window.opacity', 0.96))
+            .finally(() => { running = null; if (again) { again = false; void apply(); } });
+        return running;
+    };
     // The window can still be mapping when the extension starts; try again shortly after.
     void apply().then(count => { if (!count) setTimeout(apply, 3000); });
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => { if (event.affectsConfiguration('aiGui.window.opacity')) void apply(); }));
