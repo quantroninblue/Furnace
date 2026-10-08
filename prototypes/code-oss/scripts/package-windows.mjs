@@ -21,11 +21,12 @@ async function assemble(arch = 'x64') {
     console.log(`Assembled ${output}`);
 
     if (process.platform !== 'win32') { console.log('Not Windows: skipped the .zip.'); return; }
-    // Portable copy: unzip anywhere and run Furnace.exe. Windows' tar (bsdtar) writes zip files.
+    // Portable copy: unzip anywhere and run Furnace.exe. Windows' own tar (bsdtar) writes zip files;
+    // name it in full, because in Git Bash `tar` is GNU tar, which can't.
     await mkdir(dist, { recursive: true });
     const zip = path.join(dist, `Furnace-win32-${arch}.zip`);
     await rm(zip, { force: true });
-    execFileSync('tar', ['-a', '-c', '-f', zip, '-s', `,^VSCode-win32-${arch},Furnace,`, '-C', path.dirname(output), `VSCode-win32-${arch}`], { stdio: 'inherit' });
+    execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-a', '-c', '-f', zip, '-s', `,^VSCode-win32-${arch},Furnace,`, '-C', path.dirname(output), `VSCode-win32-${arch}`], { stdio: 'inherit' });
     console.log(`Portable zip: ${zip}`);
 }
 
