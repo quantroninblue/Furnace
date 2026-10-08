@@ -21,7 +21,9 @@ defaults:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # windows-2022 (Visual Studio 2022), like upstream's own CI: windows-latest has Visual Studio
+    # 2026, which upstream's preinstall check (2019/2022 only) rejects.
+    runs-on: windows-2022
     timeout-minutes: 240
     env:
       UPSTREAM: prototypes/code-oss/upstream
