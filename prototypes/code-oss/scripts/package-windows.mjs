@@ -1,11 +1,11 @@
 // Windows test build (windows branch; run by .github/workflows/windows-build.yml on a Windows runner).
 //   node scripts/package-windows.mjs prepare            pinned upstream: all patches, Furnace product.json
 //   (then, in upstream: npm ci && npm run gulp vscode-win32-x64-min; then npm run build)
-//   node scripts/package-windows.mjs assemble [arch]    built-in extension, app entry, portable .zip
+//   node scripts/package-windows.mjs assemble [arch]    built-in extension and app entry
 //   (then, in upstream: npm run gulp vscode-win32-x64-inno-updater vscode-win32-x64-user-setup)
-//   node scripts/package-windows.mjs collect [arch]     installer and tester note into .cache/dist
+//   node scripts/package-windows.mjs collect [arch]     installer, tester note and portable .zip into .cache/dist
 // Not code-signed: SmartScreen warns until testers choose More info → Run anyway. The .zip and the
-// installer are skipped off Windows, so the file layout can be checked elsewhere.
+// installer are only made on Windows.
 import { execFileSync } from 'node:child_process';
 import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -19,15 +19,6 @@ async function assemble(arch = 'x64') {
     if (!executables.includes('Furnace.exe')) throw new Error(`Expected Furnace.exe in ${output}, found: ${executables.join(', ') || 'none'}`);
     await installFurnace(path.join(output, 'resources/app'), 'win32');
     console.log(`Assembled ${output}`);
-
-    if (process.platform !== 'win32') { console.log('Not Windows: skipped the .zip.'); return; }
-    // Portable copy: unzip anywhere and run Furnace.exe. Windows' own tar (bsdtar) writes zip files;
-    // name it in full, because in Git Bash `tar` is GNU tar, which can't.
-    await mkdir(dist, { recursive: true });
-    const zip = path.join(dist, `Furnace-win32-${arch}.zip`);
-    await rm(zip, { force: true });
-    execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-a', '-c', '-f', zip, '-s', `,^VSCode-win32-${arch},Furnace,`, '-C', path.dirname(output), `VSCode-win32-${arch}`], { stdio: 'inherit' });
-    console.log(`Portable zip: ${zip}`);
 }
 
 async function collect(arch = 'x64') {
@@ -39,6 +30,24 @@ async function collect(arch = 'x64') {
     await cp(path.join(setup, installers[0]), path.join(dist, `FurnaceUserSetup-${arch}.exe`));
     await cp(path.join(root, 'release/READ-ME-FIRST-windows.txt'), path.join(dist, 'READ ME FIRST.txt'));
     console.log(`Installer: ${path.join(dist, `FurnaceUserSetup-${arch}.exe`)}`);
+    await portableZip(arch);
+}
+
+// Portable copy: unzip anywhere and run Furnace.exe. The app's files sit at the top of the zip, so
+// Explorer's Extract All puts them in a "Furnace-win32-x64" folder. Windows' own tar (bsdtar) writes
+// zip files; it is named in full because in Git Bash `tar` is GNU tar, and Windows' build has no -s
+// (rename). Optional: the installer is the main download, so a failure here only warns.
+async function portableZip(arch) {
+    const output = path.join(path.dirname(upstream), `VSCode-win32-${arch}`);
+    const zip = path.join(dist, `Furnace-win32-${arch}.zip`);
+    try {
+        await rm(zip, { force: true });
+        execFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-a', '-c', '-f', zip, '-C', output, ...await readdir(output)], { stdio: 'inherit' });
+        console.log(`Portable zip: ${zip}`);
+    } catch (error) {
+        await rm(zip, { force: true });
+        console.log(`::warning::Portable zip not made (${error.message.split('\n')[0]}); the installer is unaffected.`);
+    }
 }
 
 const [command, ...args] = process.argv.slice(2);
