@@ -33,8 +33,13 @@ try {
     await test.page.screenshot({ path: path.join(test.artifacts, 'compact.png') });
     // The workspace page is a side bar view: modes never open an editor tab.
     expect(await test.page.locator('.tabs-container .tab').count()).toBe(0);
-    await expect(test.page.locator('.part.sidebar .composite.title')).toContainText('AI GUI WORKSPACE', { ignoreCase: true });
+    await expect(test.page.locator('.part.sidebar .composite.title')).toContainText('Furnace WORKSPACE', { ignoreCase: true });
     await home.getByRole('tab', { name: 'Start', exact: true }).click();
+    // Branding: the Furnace wordmark shows, and the old placeholder name appears nowhere.
+    await expect(home.getByRole('img', { name: 'Furnace' })).toBeVisible();
+    await expect(conversation.getByRole('img', { name: 'Furnace' })).toBeVisible();
+    for (const text of [await test.page.title(), await test.page.locator('body').innerText(), await home.locator('body').innerText(), await conversation.locator('body').innerText()])
+        expect(text).not.toMatch(/AI GUI/i);
     await home.getByRole('button', { name: 'Skip tour', exact: true }).click();
     await expect(home.locator('#tour')).toBeHidden();
     // The Start page is Discuss mode; go back to Plan so the restart checks the saved mode.

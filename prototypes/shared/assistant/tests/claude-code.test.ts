@@ -25,7 +25,7 @@ test("Claude Code arguments restrict built-ins, hooks, MCP and persistence witho
   assert.equal(args[args.indexOf("--setting-sources") + 1], "");
   assert.ok(args.includes("--strict-mcp-config") && args.includes("--no-session-persistence"));
   assert.ok(!args.some(arg => /bypassPermissions|dangerously|--bare/.test(arg)));
-  assert.ok(args[args.indexOf("--allowedTools") + 1].includes("mcp__ai_gui__plan_read"));
+  assert.ok(args[args.indexOf("--allowedTools") + 1].includes("mcp__furnace__plan_read"));
   assert.throws(() => claudeArguments("--arbitrary-flag", "", "", tools()));
 });
 
@@ -33,7 +33,7 @@ test("workspace MCP authenticates, enforces mode and tool budget, and closes aft
   const abort = new AbortController(); let executed = 0;
   const bridge = await workspaceMcp({ definitions: tools().definitions, execute: async () => { executed++; return "fixture"; } }, abort.signal, () => {});
   try {
-    const { url, headers } = bridge.config.mcpServers.ai_gui;
+    const { url, headers } = bridge.config.mcpServers.furnace;
     const call = async (name: string, extra: Record<string, string> = {}, auth = headers) => fetch(url, { method: "POST", headers: { ...auth, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...extra }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} } }) });
     assert.equal((await call("plan_read", {}, { Authorization: "Bearer wrong" })).status, 403);
     assert.equal((await call("plan_read", { Origin: "https://untrusted.example" })).status, 403);
@@ -62,12 +62,12 @@ process.stdin.on('end', async () => {
   if (model === 'opus') { emit({ type:'system', subtype:'init', tools:['Bash'] }); setInterval(() => {}, 1000); return; }
   if (model === 'fable') { emit({ type:'result', subtype:'error_during_execution', is_error:true, errors:['SECRET_DIAGNOSTIC'] }); return; }
   if (!input.includes('Read the brief') || !input.includes('Shared notes')) process.exit(2);
-  const config = JSON.parse(fs.readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')).mcpServers.ai_gui;
+  const config = JSON.parse(fs.readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')).mcpServers.furnace;
   const headers = { ...config.headers, 'Content-Type':'application/json', Accept:'application/json, text/event-stream' };
   const rpc = async (method, params) => (await fetch(config.url, { method:'POST', headers, body:JSON.stringify({ jsonrpc:'2.0', id:1, method, params }) })).json();
   await rpc('initialize', { protocolVersion:'2025-03-26', capabilities:{}, clientInfo:{name:'fixture', version:'1'} });
   const list = await rpc('tools/list', {});
-  emit({ type:'system', subtype:'init', tools:list.result.tools.map(tool => 'mcp__ai_gui__' + tool.name), mcp_servers:[{ name:'ai_gui', status:'connected' }] });
+  emit({ type:'system', subtype:'init', tools:list.result.tools.map(tool => 'mcp__furnace__' + tool.name), mcp_servers:[{ name:'furnace', status:'connected' }] });
   const result = await rpc('tools/call', { name:'plan_read', arguments:{} });
   const block = text => { emit({ type:'stream_event', event:{type:'content_block_start', index:0, content_block:{type:'text', text:''}} }); emit({ type:'stream_event', event:{type:'content_block_delta', index:0, delta:{type:'text_delta', text}} }); };
   block(result.result.content[0].text); block('Done.');

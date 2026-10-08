@@ -3,6 +3,7 @@ import type { AuditEntry, BackgroundTask, ChatState, OrgSpend, Page, PlanStep, R
 import { Icon, type IconName } from "../icons";
 import { choosePage, closeConnections, post, setPrefs, useStore, useSyncedText } from "../store";
 import { tourSteps } from "../tour";
+import { Logo } from "../logo";
 
 function Tour({ data }: { data: State }) {
   const steps = tourSteps(data), done = steps.filter(step => step.done).length, complete = done === steps.length;
@@ -10,7 +11,7 @@ function Tour({ data }: { data: State }) {
   return (
     <section id="tour" className="tour" aria-label="Getting started">
       <div className="tour-head">
-        <div><div className="eyebrow">Getting started</div><h2 id="tour-title">{complete ? "You’re all set" : "Set up AI GUI in a few steps"}</h2></div>
+        <div><div className="eyebrow">Getting started</div><h2 id="tour-title">{complete ? "You’re all set" : "Set up Furnace in a few steps"}</h2></div>
         <div className="row"><span id="tour-progress" className="tour-progress">{done} of {steps.length}</span>
           <button className="ghost small" id="tour-dismiss" onClick={() => post({ type: "tourDismiss" })}>{complete ? "Close" : "Skip tour"}</button></div>
       </div>
@@ -131,7 +132,7 @@ function SpendPanel({ chat, remember }: { chat: ChatState; remember: boolean }) 
   return (
     <div id="spend-panel" className="spend-panel">
       <h4>Spend</h4>
-      <p className="connection-detail">From replies in AI GUI on this device (estimated at list prices): today <b>{usd(today?.total || 0)}</b>, this month <b>{usd(month?.total || 0)}</b>
+      <p className="connection-detail">From replies in Furnace on this device (estimated at list prices): today <b>{usd(today?.total || 0)}</b>, this month <b>{usd(month?.total || 0)}</b>
         {month && Object.keys(month.byProvider).length ? ` (${Object.entries(month.byProvider).map(([name, value]) => `${providerName(name)} ${usd(value)}`).join(", ")})` : ""}.
         {chat.budget ? ` Monthly budget ${usd(chat.budget)}.` : " Set aiGui.budget.monthlyUsd to be warned near a budget."}</p>
       {Object.entries(chat.limits || {}).map(([name, limits]) => limits.tokens?.remaining !== undefined || limits.plan?.length ? <p key={name} className="muted small">{providerName(name)}: {limits.plan?.length
@@ -145,7 +146,7 @@ function SpendPanel({ chat, remember }: { chat: ChatState; remember: boolean }) 
         <button className="ghost small" onClick={() => post({ type: "spendRefresh" })}><Icon name="refresh" size={12} />Refresh</button>
       </div>}
       <details className="admin-keys"><summary>Organization spend with an admin key</summary>
-        <p className="connection-detail">API keys cannot read your credit balance. An admin key (OpenAI <code>sk-admin-…</code>, Anthropic <code>sk-ant-admin…</code>) can read the organization’s cost report; AI GUI uses it only for that.</p>
+        <p className="connection-detail">API keys cannot read your credit balance. An admin key (OpenAI <code>sk-admin-…</code>, Anthropic <code>sk-ant-admin…</code>) can read the organization’s cost report; Furnace uses it only for that.</p>
         <select aria-label="Admin key provider" value={provider} onChange={event => setProvider(event.target.value as "openai" | "anthropic")}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select>
         <input aria-label="Admin key" type="password" autoComplete="off" maxLength={4096} placeholder={provider === "openai" ? "sk-admin-…" : "sk-ant-admin…"} value={key} onChange={event => setKey(event.target.value)} />
         <div className="row">
@@ -388,7 +389,7 @@ export function HomePage() {
       {open && data.chat && <Connections chat={data.chat} />}
       <div id="workspace-pages" hidden={open}>
         {page === "start" && <section className="welcome">
-          <div className="welcome-symbol"><Icon name="layers" size={30} /></div>
+          <Logo />
           <h1>Your ideas.<br /><span>A little more possibility.</span></h1>
           <p className="lede">A workspace for you and your agents.<br />Explore the plan, work in the code, stay in control.</p>
           <button className="primary large" onClick={() => post({ type: "openFolder" })}><Icon name="folder" size={15} /> Open a project <Icon name="chevron" size={13} /></button>
@@ -409,7 +410,7 @@ export function HomePage() {
           <section id="privacy" className="privacy" aria-label="Privacy">
             <h3 className="section-title"><Icon name="shield" size={14} /> Your data stays yours</h3>
             <ul>
-              <li><b>No AI GUI account, no telemetry.</b> Conversations, the activity log, saved rules and checkpoints stay on this device.</li>
+              <li><b>No Furnace account, no telemetry.</b> Conversations, the activity log, saved rules and checkpoints stay on this device.</li>
               <li><b>Only what you send leaves.</b> A message goes to the model you chose, with the context you shared (chips, @files, pasted images) and what the agent reads to do the task.</li>
               <li><b>Your accounts, your billing.</b> ChatGPT, Claude Code, API keys or local Ollama; nothing switches accounts or falls back to paid billing on its own.</li>
               <li><b>Keys stay in a separate service</b> and in your system’s secure storage only when you choose “Remember”.</li>

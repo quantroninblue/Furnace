@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
-// Estimated API spend by AI GUI on this device, per day and provider (US dollars), so the user
+// Estimated API spend by Furnace on this device, per day and provider (US dollars), so the user
 // sees today's and this month's total across conversations and can set a monthly budget.
 type Days = Record<string, Record<string, number>>;
 const day = (time = Date.now()) => new Date(time).toISOString().slice(0, 10);

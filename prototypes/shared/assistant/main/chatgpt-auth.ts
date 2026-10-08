@@ -141,7 +141,7 @@ export class ChatGPTAuth {
           if (url.searchParams.has("error") || url.searchParams.getAll("code").length !== 1 || url.searchParams.getAll("client_id").length > 1 || !validString(code, 8192) || !validString(clientId, 512) || clientId === "dynamic_agent_client" || (selected && clientId !== selected.clientId)) {
             res.writeHead(400); res.end("Sign-in was declined or incomplete. Return to the app."); reject(new AuthError("ChatGPT sign-in was declined or incomplete. Try again when ready.")); return;
           }
-          res.end("Authorization received. Return to AI GUI to finish connecting."); resolve({ code, clientId });
+          res.end("Authorization received. Return to Furnace to finish connecting."); resolve({ code, clientId });
         });
         server.maxHeadersCount = 32; server.requestTimeout = 10000; server.headersTimeout = 10000;
         controller.signal.addEventListener("abort", () => reject(new AuthError("ChatGPT sign-in cancelled or timed out.")), { once: true });
@@ -153,7 +153,7 @@ export class ChatGPTAuth {
       redirect = `http://127.0.0.1:${(server!.address() as { port: number }).port}/auth/callback`;
       controller.signal.throwIfAborted();
       const authorization = new URL(`${issuer}/api/accounts/authorize`);
-      authorization.search = new URLSearchParams({ client_id: selected?.clientId ?? "dynamic_agent_client", ext_agent_host_id: this.state.hostId, ...(selected ? { ...(selected.tokens?.identity ? { id_token_hint: selected.tokens.identity } : {}), ...(selected.email ? { login_hint: selected.email } : {}), ...(!selected.tokens?.scopes.includes(planScope) ? { prompt: "consent" } : {}) } : { agent_name_hint: "AI GUI" }), response_type: "code", redirect_uri: redirect, scope: scopes, resource, state, nonce, code_challenge_method: "S256", code_challenge: createHash("sha256").update(verifier).digest("base64url") }).toString();
+      authorization.search = new URLSearchParams({ client_id: selected?.clientId ?? "dynamic_agent_client", ext_agent_host_id: this.state.hostId, ...(selected ? { ...(selected.tokens?.identity ? { id_token_hint: selected.tokens.identity } : {}), ...(selected.email ? { login_hint: selected.email } : {}), ...(!selected.tokens?.scopes.includes(planScope) ? { prompt: "consent" } : {}) } : { agent_name_hint: "Furnace" }), response_type: "code", redirect_uri: redirect, scope: scopes, resource, state, nonce, code_challenge_method: "S256", code_challenge: createHash("sha256").update(verifier).digest("base64url") }).toString();
       await this.openBrowser(authorization.href);
       const result = await callback;
       server!.close();

@@ -17,7 +17,7 @@ export function htmlToText(html: string) {
 }
 
 export async function fetchText(url: string, signal: AbortSignal) {
-  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]), headers: { "User-Agent": "AI-GUI/0.1 (+agent web_fetch)", Accept: "text/html,text/plain,application/json,*/*;q=0.5" } });
+  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]), headers: { "User-Agent": "Furnace/0.1 (+agent web_fetch)", Accept: "text/html,text/plain,application/json,*/*;q=0.5" } });
   const final = new URL(response.url || url);
   if (!["http:", "https:"].includes(final.protocol)) throw new Error("Redirected to a non-HTTP(S) URL.");
   const reader = response.body?.getReader();

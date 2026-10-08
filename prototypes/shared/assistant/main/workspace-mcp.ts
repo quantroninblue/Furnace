@@ -6,7 +6,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import type { AgentTools } from "./agent-tools";
 
 // Claude Code reserves "workspace" and silently drops a server with that name.
-export const mcpServerName = "ai_gui";
+export const mcpServerName = "furnace";
 
 // One authenticated loopback endpoint per turn, sharing the same scoped tool
 // executor as the direct model adapters. It never exposes shell/file writes.
@@ -29,7 +29,7 @@ export async function workspaceMcp(tools: AgentTools, signal: AbortSignal, activ
       for await (const chunk of req) { body += chunk.toString(); if (Buffer.byteLength(body) > 65536) { res.writeHead(413).end(); return; } }
       let parsed: unknown;
       try { parsed = JSON.parse(body); } catch { res.writeHead(400).end(); return; }
-      const mcp = new Server({ name: "AI GUI workspace", version: "0.1.0" }, { capabilities: { tools: {} } });
+      const mcp = new Server({ name: "Furnace workspace", version: "0.1.0" }, { capabilities: { tools: {} } });
       active.add(mcp);
       mcp.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.definitions.map(({ function: tool }) => ({ name: tool.name, description: tool.description, inputSchema: tool.parameters })) }));
       mcp.setRequestHandler(CallToolRequestSchema, request => {

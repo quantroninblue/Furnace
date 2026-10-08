@@ -12,6 +12,7 @@ const { gitChanges, problemsText, selectionText, searchPaths } = require('./ide-
 const { CommandTerminals } = require('./terminals.cjs');
 const { AgentChanges } = require('./agent-scm.cjs');
 const { createSupport } = require('./support.cjs');
+const { createWindowOpacity } = require('./window-opacity.cjs');
 const { createDiffViews } = require('./diff-views.cjs');
 const { createBackground } = require('./background-tasks.cjs');
 const { createInlineEdits } = require('./inline-edit.cjs');
@@ -25,8 +26,8 @@ const { CodeOssDocuments } = require('./document-adapter.cjs');
 exports.activate = async context => {
     await fs.mkdir(context.globalStorageUri.fsPath, { recursive: true });
     const session = new ProductSession(context.workspaceState.get('session'));
-    // In-app log (Output → AI GUI); the newest lines also go into "Copy Diagnostics".
-    const output = vscode.window.createOutputChannel('AI GUI', { log: true });
+    // In-app log (Output → Furnace); the newest lines also go into "Copy Diagnostics".
+    const output = vscode.window.createOutputChannel('Furnace', { log: true });
     context.subscriptions.push(output);
     const recent = [];
     const log = (level, text) => { recent.push(`${new Date().toISOString()} ${level} ${text}`); if (recent.length > 200) recent.shift(); output[level]?.(text); };
@@ -40,12 +41,12 @@ exports.activate = async context => {
     let conversation, files, scm, background, inline, agentFilesKey = '';
     // Status bar mirrors the original app's connection indicator; it opens Connections.
     const indicator = vscode.window.createStatusBarItem('aiGui.model', vscode.StatusBarAlignment.Left, 100);
-    indicator.name = 'AI GUI Model'; indicator.command = 'aiGui.connections'; indicator.show();
+    indicator.name = 'Furnace Model'; indicator.command = 'aiGui.connections'; indicator.show();
     context.subscriptions.push(indicator);
     const showIndicator = chat => {
         const model = chat?.connections.models?.find(item => item.id === chat.model);
         indicator.text = model ? `$(circle-filled) ${model.name}` : chat?.connections.models?.length ? '$(circle-outline) Choose a model' : '$(plug) Connect a model';
-        indicator.tooltip = model ? `Active model: ${model.name}. Click to manage connections.` : 'Open AI GUI connections';
+        indicator.tooltip = model ? `Active model: ${model.name}. Click to manage connections.` : 'Open Furnace connections';
     };
     // First-run tutorial progress (global, survives restarts). The first agent reply
     // with tool steps completes the "first task" step.
@@ -114,7 +115,7 @@ exports.activate = async context => {
     async function requestTrust() {
         if (vscode.workspace.isTrusted) return true;
         if (typeof vscode.workspace.requestWorkspaceTrust === 'function') {
-            try { await vscode.workspace.requestWorkspaceTrust({ message: `Trust ${path.basename(root() || 'this folder')} so the AI GUI agent can read, edit and create files and run commands in it (within your permission mode).` }); }
+            try { await vscode.workspace.requestWorkspaceTrust({ message: `Trust ${path.basename(root() || 'this folder')} so the Furnace agent can read, edit and create files and run commands in it (within your permission mode).` }); }
             catch { await vscode.commands.executeCommand('workbench.trust.manage'); }
         } else await vscode.commands.executeCommand('workbench.trust.manage');
         broadcast(); return vscode.workspace.isTrusted;
@@ -166,6 +167,7 @@ exports.activate = async context => {
     activeConversation = conversation;
     const save = () => { void conversation.save(); persist(); };
     const text = (value, limit) => { if (typeof value !== 'string' || value.length > limit) throw new Error('Invalid message.'); return value; };
+    createWindowOpacity(context);
     const support = createSupport({ context, conversation, session, root, permission, sandbox, recent, lastStatus: () => lastStatus, status });
     const diffViews = createDiffViews({ context, conversation, status, text });
     const preview = diffViews.preview;
@@ -253,7 +255,7 @@ exports.activate = async context => {
         processStop: message => conversation.processes.stop(text(message.id, 100)),
         processShow: message => conversation.processes.show(text(message.id, 100)),
         openScm: () => vscode.commands.executeCommand('workbench.view.scm'),
-        keys: () => vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', 'AI GUI'),
+        keys: () => vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', 'Furnace'),
         diagnostics: () => support.copyDiagnostics(),
         feedback: () => support.sendFeedback(),
         checkUpdates: () => support.checkForUpdates(true),
@@ -270,7 +272,7 @@ exports.activate = async context => {
         tourDismiss: () => { updateTour({ dismissed: true }); broadcast(); },
         tourShow: () => showTour(),
         tourExample: async () => {
-            session.update('mode', 'Build'); session.update('draft', 'Create a file named hello.txt that says "Hello from AI GUI", then list the files in the project.'); save(); broadcast();
+            session.update('mode', 'Build'); session.update('draft', 'Create a file named hello.txt that says "Hello from Furnace", then list the files in the project.'); save(); broadcast();
             await vscode.commands.executeCommand('aiGui.conversation.focus');
             status('Example ready in the message box. Press Enter to send it.');
         },

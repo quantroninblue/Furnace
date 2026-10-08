@@ -50,7 +50,7 @@ try {
     delete process.env.AI_GUI_REVIEW_TEST;
     await test.launch(workspaceFile, ['--disable-workspace-trust']);
     await test.webview('conversation');
-    await test.command('AI GUI: Apply Reviewed Changes');
+    await test.command('Furnace: Apply Reviewed Changes');
     await expect((await test.webview('conversation')).locator('#status')).toHaveText('No pending proposal.');
     await checkActivationLogs();
     const result = await report();

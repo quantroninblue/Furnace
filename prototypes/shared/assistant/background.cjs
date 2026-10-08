@@ -72,7 +72,7 @@ class BackgroundTasks {
     }
     async load() {
         try { this.tasks = JSON.parse(await fs.readFile(this.file, 'utf8')).filter(task => task && typeof task.id === 'string'); } catch { this.tasks = []; }
-        for (const task of this.tasks) if (task.state === 'running') { task.state = 'interrupted'; task.error = 'AI GUI closed while the task was running. Its worktree is kept; review or discard it.'; }
+        for (const task of this.tasks) if (task.state === 'running') { task.state = 'interrupted'; task.error = 'Furnace closed while the task was running. Its worktree is kept; review or discard it.'; }
         await this.persist(); return this.tasks;
     }
     persist() {

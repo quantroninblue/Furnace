@@ -1,4 +1,4 @@
-// Claude Code owns its sign-in: AI GUI opens it in an IDE terminal and rediscovers
+// Claude Code owns its sign-in: Furnace opens it in an IDE terminal and rediscovers
 // connections once that terminal exits, so the panel reflects the CLI's state.
 const vscode = require('vscode');
 const { findClaude } = require('../../shared/assistant/main/claude-discovery.ts');

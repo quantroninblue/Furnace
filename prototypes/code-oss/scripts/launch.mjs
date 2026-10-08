@@ -44,7 +44,7 @@ export async function launchOptions(profile = process.env.AI_GUI_CODE_OSS_PROFIL
     // Application-scoped product defaults. Extensions cannot default these, so add
     // any missing keys; never override a value already present in the profile.
     const defaults = {
-        'workbench.colorTheme': 'AI GUI Charcoal', 'chat.disableAIFeatures': true,
+        'workbench.colorTheme': 'Furnace Charcoal', 'chat.disableAIFeatures': true,
         'workbench.startupEditor': 'none', 'workbench.secondarySideBar.defaultVisibility': 'visible',
         'telemetry.telemetryLevel': 'off', 'extensions.autoUpdate': false,
         'extensions.autoCheckUpdates': false, 'window.commandCenter': false,
@@ -56,7 +56,7 @@ export async function launchOptions(profile = process.env.AI_GUI_CODE_OSS_PROFIL
         'window.dialogStyle': 'custom', 'window.titleBarStyle': 'native', 'window.menuStyle': 'native',
     };
     // Earlier product defaults to replace in existing profiles (only if still unchanged).
-    const replaced = { 'window.menuStyle': 'custom' };
+    const replaced = { 'window.menuStyle': 'custom', 'workbench.colorTheme': 'AI GUI Charcoal' };
     const settingsFile = path.join(settingsDirectory, 'settings.json');
     let settings;
     try { settings = JSON.parse(await readFile(settingsFile, 'utf8')); }

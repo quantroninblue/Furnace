@@ -64,7 +64,7 @@ test("ChatGPT browser OAuth uses PKCE, verifies identity, encrypts credentials, 
   await f.auth.signIn(null, true);
   const firstURL = f.url, status = f.auth.status(), id = status.activeId!;
   assert.equal(firstURL.searchParams.get("client_id"), "dynamic_agent_client");
-  assert.equal(firstURL.searchParams.get("agent_name_hint"), "AI GUI");
+  assert.equal(firstURL.searchParams.get("agent_name_hint"), "Furnace");
   assert.equal(firstURL.searchParams.get("scope"), permission);
   assert.equal(status.accounts[0].planEnabled, true);
   assert.equal(status.welcome, true);

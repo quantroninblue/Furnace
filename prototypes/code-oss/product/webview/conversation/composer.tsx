@@ -118,7 +118,7 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
     simple("tour", "Show the getting started guide", { type: "tourShow" }),
     simple("keys", "Show and change keyboard shortcuts", { type: "keys" }),
     simple("diagnostics", "Copy diagnostics for a bug report", { type: "diagnostics" }),
-    simple("feedback", "Send feedback about AI GUI", { type: "feedback" }),
+    simple("feedback", "Send feedback about Furnace", { type: "feedback" }),
     { name: "zoom", hint: "in|out|reset", description: "Make all text larger or smaller", run: arg => { update(""); post({ type: arg === "out" ? "textSmaller" : arg === "reset" ? "textReset" : "textLarger" }); } },
     { name: "help", description: "Show these commands", run: () => update("/", true) },
   ];

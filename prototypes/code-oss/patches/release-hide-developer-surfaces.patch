@@ -6,7 +6,7 @@ index cab57086..5d89133b 100644
  //#region --- process explorer commands
  
  const supported = ContextKeyExpr.or(IsWebContext.negate(), RemoteNameContext.notEqualsTo('')); // only on desktop or in web with a remote
-+// AI GUI release builds: only in development or with aiGui.support.developerTools.
++// Furnace release builds: only in development or with aiGui.support.developerTools.
 +const developerSurfaces = ContextKeyExpr.or(ContextKeyExpr.equals('isDevelopment', true), ContextKeyExpr.equals('config.aiGui.support.developerTools', true));
  
  interface IProcessExplorerWindowState {
@@ -47,7 +47,7 @@ index 1a1f1e1d..fc24c2ff 100644
  	},
 -	order: 3
 +	order: 3,
-+	// AI GUI release builds: VS Code's editor tutorial only in development.
++	// Furnace release builds: VS Code's editor tutorial only in development.
 +	when: ContextKeyExpr.or(ContextKeyExpr.equals('isDevelopment', true), ContextKeyExpr.equals('config.aiGui.support.developerTools', true))
  });
 diff --git a/src/vs/workbench/electron-browser/actions/developerActions.ts b/src/vs/workbench/electron-browser/actions/developerActions.ts
@@ -60,7 +60,7 @@ index d9294805..7af96308 100644
  import { IsDevelopmentContext } from '../../../platform/contextkey/common/contextkeys.js';
 +import { ContextKeyExpr } from '../../../platform/contextkey/common/contextkey.js';
 +
-+// AI GUI release builds: developer surfaces only in development or with aiGui.support.developerTools.
++// Furnace release builds: developer surfaces only in development or with aiGui.support.developerTools.
 +const DeveloperSurfaces = ContextKeyExpr.or(IsDevelopmentContext, ContextKeyExpr.equals('config.aiGui.support.developerTools', true));
  import { KeyCode, KeyMod } from '../../../base/common/keyCodes.js';
  import { INativeWorkbenchEnvironmentService } from '../../services/environment/electron-browser/environmentService.js';

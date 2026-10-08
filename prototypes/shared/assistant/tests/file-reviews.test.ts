@@ -8,7 +8,7 @@ import { FileReviews } from "../main/file-reviews";
 import type { FileProposal } from "../shared/types";
 
 async function fixture(run: (workspace: Workspace, reviews: FileReviews) => Promise<void>) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ai-gui-review-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "furnace-review-"));
   try {
     await fs.writeFile(path.join(root, "hello.ts"), "export const hello = 1;\n");
     await run(new Workspace(await fs.realpath(root)), new FileReviews());
