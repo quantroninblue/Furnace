@@ -68,7 +68,7 @@ export function ConversationPanel() {
         </MessageList>
       )}
       <div className="composer-area">
-        <div id="status" role="status" className="status-line">{chat.compacting ? "Condensing earlier messages into a summary…" : chat.error || data.status || note}</div>
+        <div id="status" role="status" className="status-line">{chat.compacting ? "Condensing earlier messages into a summary…" : note || chat.error || data.status}</div>
         <Composer chat={chat} research={data.research} mode={mode} draft={data.state.draft} />
       </div>
     </div>

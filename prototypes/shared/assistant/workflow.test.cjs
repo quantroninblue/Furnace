@@ -73,6 +73,30 @@ test('a failed summary leaves a note and older messages are no longer sent; /com
     assert.deepEqual(requests.at(-1).messages.map(message => message.kind || message.role), ['summary', 'user']);
 });
 
+test('/compact leaves short history alone and drops a summary that is not shorter', async t => {
+    let summary = 'Short.';
+    const summaries = [];
+    const chat = await fixture(t, async (request, _tools, _signal, emit) => {
+        if (request.messages.at(-1).content.startsWith('Summarize our conversation')) { summaries.push(request); emit({ delta: summary }); }
+        else emit({ delta: 'ok' });
+    });
+    for (let i = 0; i < 6; i++) await chat.send(`hi ${i}`);
+    await chat.compact();
+    assert.equal(summaries.length, 0, 'no summary request for a tiny chat');
+    assert.match(chat.error, /^Too little to condense yet: the earlier messages are only about \d+ tokens\.$/);
+    assert.ok(!chat.data.messages.some(message => message.kind === 'summary'));
+    await chat.send(`long ${'z'.repeat(5000)}`);
+    summary = 'w'.repeat(8000);
+    await chat.compact();
+    assert.equal(summaries.length, 1);
+    assert.match(chat.error, /no shorter than the messages it would replace/);
+    assert.ok(!chat.data.messages.some(message => message.kind === 'summary'));
+    summary = 'Useful summary.';
+    await chat.compact();
+    assert.equal(chat.error, '');
+    assert.equal(chat.data.messages.at(-1).content, 'Useful summary.');
+});
+
 test('@file and @folder mentions share project content; protected and blocked paths are not shared', async t => {
     const { root, host } = await project(t);
     await fs.mkdir(path.join(root, 'src')); await fs.writeFile(path.join(root, 'src/app.ts'), 'export const app = 1;\n');

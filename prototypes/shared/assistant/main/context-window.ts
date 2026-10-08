@@ -27,6 +27,9 @@ export function replyReserve(window: number) { return Math.min(32_000, Math.floo
  */
 export const CONDENSE_AT = 0.6, KEEP_RECENT = 0.25;
 
+/** /compact skips history smaller than this: a summary would not be shorter. */
+export const COMPACT_MIN = 1_000;
+
 export const summaryInstruction = `Summarize our conversation so far so that you can continue the work from this summary alone; the earlier messages will no longer be available to you.
 Include: the user's goals and requirements; decisions made and why; constraints and preferences the user stated; files read, created or changed (with paths) and their current state; commands run and their results; problems found and how they were resolved; open questions; the agreed next steps.
 Use short Markdown sections and bullet points. Keep exact names, paths, numbers and error messages. Leave out pleasantries. Do not call tools. Stay under 1,500 words.`;

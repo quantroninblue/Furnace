@@ -34,7 +34,7 @@ function createSupport({ context, conversation, session, root, permission, sandb
             `Model: ${chat.model || 'none'} · context ${usage ? `~${usage.used} of ${usage.window} tokens (${usage.source || 'estimated'}), ${usage.condensed} summaries` : 'n/a'}`,
             `Connections: ${(chat.connections.connections || []).map(item => `${item.provider}=${item.connected ? 'connected' : 'not connected'}${item.error ? ` (${redact(item.error).slice(0, 160)})` : ''}`).join('; ') || 'not discovered'}`,
             `Conversation: ${chat.messages.length} messages · busy ${chat.busy} · queued ${chat.queue.length} · background processes ${chat.processes.filter(item => item.status === 'running').length} · rules ${chat.rules.length}`,
-            `Last error: ${redact(chat.error || lastStatus() || 'none').slice(0, 300)}`,
+            chat.error ? `Last error: ${redact(chat.error).slice(0, 300)}` : `Last status: ${redact(lastStatus() || 'none').slice(0, 300)}`,
             '', 'Recent log:', ...recent.slice(-80).map(redact),
         ].join('\n');
     }

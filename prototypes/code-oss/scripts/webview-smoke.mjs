@@ -204,6 +204,19 @@ try {
     await draft.focus(); await page.keyboard.press('Enter');
     expect((await posted(page, 'enqueue')).at(-1)).toMatchObject({ value: 'Also add tests' });
     await send(page, state({ chat: idle }));
+    // A rejected paste shows over older status text, until the status changes.
+    await send(page, state({ chat: idle, status: 'Diagnostics copied to the clipboard.' }));
+    await expect(page.locator('#status')).toHaveText('Diagnostics copied to the clipboard.');
+    await draft.evaluate(element => {
+        const data = new DataTransfer(); data.items.add(new File([new Uint8Array(6 * 1024 * 1024)], 'big.png', { type: 'image/png' }));
+        element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await expect(page.locator('#status')).toHaveText('Paste PNG, JPEG, GIF or WebP images up to 5 MB.');
+    expect(await posted(page, 'pasteImage')).toEqual([]);
+    await send(page, state({ chat: idle, status: 'Earlier messages condensed into a summary.' }));
+    await expect(page.locator('#status')).toHaveText('Earlier messages condensed into a summary.');
+    checks.push('rejected paste note shows over older status');
+    await send(page, state({ chat: idle }));
     // History pane: search, rename, delete, open.
     await page.getByRole('button', { name: 'Chat History' }).click();
     await expect.poll(async () => (await posted(page, 'historyList')).length).toBeGreaterThan(0);
