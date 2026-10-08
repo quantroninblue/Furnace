@@ -4,7 +4,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { definitionsSize, protectedPath } = require('../main/agent-tools.ts');
 const { agentInstructions, historyText } = require('../main/agent-context.ts');
-const { estimateTokens, replyReserve, CONDENSE_AT, KEEP_RECENT, summaryInstruction } = require('../main/context-window.ts');
+const { estimateTokens, replyReserve, CONDENSE_AT, KEEP_RECENT, COMPACT_MIN, summaryInstruction } = require('../main/context-window.ts');
 // Conversation context: what the next request contains, how full the model's window is,
 // and condensing older messages into a summary when it fills up.
 class ContextMethods {
@@ -155,9 +155,11 @@ class ContextMethods {
      * Summarises the conversation before a cut point into a "summary" message inserted there.
      * Keeps the newest messages worth `keep` tokens (and always the latest one when `keepLast`).
      * Returns false when there is nothing to condense. A failed summary leaves a visible note
-     * and the older messages are simply no longer sent.
+     * and the older messages are simply no longer sent. With `manual` (/compact), history too
+     * small to gain from a summary, or a summary no shorter than what it replaces, is left as
+     * it was and the reason is returned instead.
      */
-    async condense(pending, keep, keepLast, signal, epoch, idBase) {
+    async condense(pending, keep, keepLast, signal, epoch, idBase, manual = false) {
         const previousAt = pending.findLastIndex(message => message.kind === 'summary'), start = previousAt + 1;
         let cut = pending.length - (keepLast ? 1 : 0), size = 0;
         while (cut > start) { const next = size + messageTokens(pending[cut - 1]); if (next > keep) break; size = next; cut--; }
@@ -167,6 +169,8 @@ class ContextMethods {
         const items = pending.slice(start, cut).filter(message => message.content.trim() && message.kind !== 'summary');
         if (!items.length) return false;
         const previous = previousAt >= 0 && !pending[previousAt].failed ? pending[previousAt].content : '';
+        const replaced = historyTokens(items) + (previous ? estimateTokens(previous) : 0);
+        if (manual && replaced < COMPACT_MIN) return `Too little to condense yet: the earlier messages are only about ${replaced} tokens.`;
         const anchor = pending[cut], insert = note => {
             const at = anchor ? this.data.messages.indexOf(anchor) : this.data.messages.length;
             this.data.messages.splice(at < 0 ? this.data.messages.length : at, 0, note); this.changed();
@@ -187,6 +191,11 @@ class ContextMethods {
                 }
                 summary = await this.summarize(summary, chunk, budget, signal, `${idBase}-summary-${round++}`, usage);
                 if (epoch !== this.epoch) throw new Error('Conversation changed.');
+            }
+            if (manual && estimateTokens(summary) >= replaced) {
+                // The summary request is still paid for.
+                this.settleCost({ model: this.data.model, ...(usage.usage ? { usage: usage.usage } : {}) });
+                return 'Nothing condensed: the summary came out no shorter than the messages it would replace.';
             }
             const note = { id: randomUUID(), ...base, content: summary.slice(0, 40000), ...(usage.usage ? { usage: usage.usage } : {}) };
             this.settleCost(note); insert(note);
@@ -217,8 +226,8 @@ class ContextMethods {
         this.changed();
         turn.done = (async () => {
             try {
-                if (!await this.condense(this.data.messages.slice(), 0, false, controller.signal, epoch, randomUUID())) this.error = 'Nothing to condense yet.';
-                else this.error = '';
+                const result = await this.condense(this.data.messages.slice(), 0, false, controller.signal, epoch, randomUUID(), true);
+                this.error = result === true ? '' : result || 'Nothing to condense yet.';
             } catch (error) { if (!controller.signal.aborted) this.error = error.message; }
             finally { if (this.turn === turn) this.turn = undefined; await this.save(); this.changed(); }
         })();

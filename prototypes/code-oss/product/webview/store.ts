@@ -13,7 +13,7 @@ type Snapshot = {
   /** Messages keep their object identity until they change, so rows re-render only then. */
   messages: ChatMessage[];
   prefs: ViewPrefs;
-  /** A local note (e.g. an unknown slash command) shown until the next status change. */
+  /** A local note (e.g. an unknown slash command or a rejected paste), shown over older status text until the next status or error change. */
   note: string;
   /** Workspace view page; it follows the mode until the user picks another page. */
   page: Page;
@@ -69,7 +69,8 @@ window.addEventListener("message", ({ data }: MessageEvent<ToWebview>) => {
   const next: Partial<Snapshot> = { data: state };
   // Switching mode shows that mode's page (unless Connections is open).
   if (state.state.mode !== snapshot.data?.state.mode && snapshot.page !== "connections") next.page = modePage[state.state.mode];
-  if (state.status !== snapshot.data?.status) next.note = "";
+  // A local note shows until the status or the chat error changes.
+  if (state.status !== snapshot.data?.status || state.chat?.error !== snapshot.data?.chat?.error) next.note = "";
   if (sync) {
     if (sync.reset) byId.clear();
     for (const message of sync.upsert) byId.set(message.id, message);
