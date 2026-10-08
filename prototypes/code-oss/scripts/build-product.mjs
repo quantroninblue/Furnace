@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm } from 'node:fs/promises';
+import { chmod, cp, mkdir, readFile, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -18,11 +18,16 @@ for (const file of ['package.json', 'media', 'themes']) await cp(path.join(root,
 // Conversation panel and workspace page (React), one bundle per webview surface.
 await build({ entryPoints: ['conversation', 'home'].map(name => path.join(root, `product/webview/${name}.tsx`)), outdir: path.join(output, 'media'), bundle: true, platform: 'browser', format: 'iife',
     target: 'chrome130', jsx: 'automatic', minify: true, sourcemap: true, legalComments: 'linked', define: { 'process.env.NODE_ENV': '"production"' } });
-// Agent command sandbox (Linux): optional; without it Auto mode asks before commands.
+// Agent command sandbox (Landlock on Linux, Seatbelt on macOS): optional; without it Auto
+// mode asks before commands.
 await rm(path.join(output, 'sandbox'), { recursive: true, force: true });
 if (process.platform === 'linux') {
     await mkdir(path.join(output, 'sandbox'), { recursive: true });
     try { execFileSync(process.env.CC || 'cc', ['-O2', '-Wall', '-o', path.join(output, 'sandbox/ai-gui-sandbox'), path.join(root, 'product/sandbox/ai-gui-sandbox.c')], { stdio: 'pipe' }); }
     catch (error) { console.warn(`Command sandbox not built (${String(error.stderr || error.message).trim().split('\n')[0]}); Auto mode will ask before commands.`); }
+} else if (process.platform === 'darwin') {
+    await mkdir(path.join(output, 'sandbox'), { recursive: true });
+    await cp(path.join(root, 'product/sandbox/ai-gui-sandbox-macos.sh'), path.join(output, 'sandbox/ai-gui-sandbox'));
+    await chmod(path.join(output, 'sandbox/ai-gui-sandbox'), 0o755);
 }
 console.log(`Built ${JSON.parse(await readFile(path.join(output, 'package.json'))).displayName}: ${output}`);

@@ -1,0 +1,19 @@
+diff --git a/src/vs/platform/windows/electron-main/windowImpl.ts b/src/vs/platform/windows/electron-main/windowImpl.ts
+index 4a4172f5..ec2c9a46 100644
+--- a/src/vs/platform/windows/electron-main/windowImpl.ts
++++ b/src/vs/platform/windows/electron-main/windowImpl.ts
+@@ -1183,6 +1183,14 @@ export class CodeWindow extends BaseWindow implements ICodeWindow {
+ 			}
+ 		}
+ 
++		// Window opacity (Furnace product patch, patches/window-opacity.patch). The Furnace
++		// extension owns the setting and applies it on Linux/X11; elsewhere Electron does.
++		// The main process does not know the extension's default, hence the 0.96 fallback.
++		if ((isMacintosh || isWindows) && (!e || e.affectsConfiguration('aiGui.window.opacity'))) {
++			const opacity = this.configurationService.getValue<unknown>('aiGui.window.opacity');
++			this._win.setOpacity(Math.min(1, Math.max(0.5, typeof opacity === 'number' && isFinite(opacity) ? opacity : 0.96)));
++		}
++
+ 		// Menubar
+ 		if (!e || e.affectsConfiguration(MenuSettings.MenuBarVisibility)) {
+ 			const newMenuBarVisibility = this.getMenuBarVisibility();

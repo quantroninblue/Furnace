@@ -105,7 +105,8 @@ exports.activate = async context => {
     files = new AgentFileReviews(documents, reviews);
     const provider = new AssistantClient({ executable: process.execPath, entry: path.join(context.extensionPath, 'assistant/entry.cjs'), directory: path.join(context.globalStorageUri.fsPath, 'connections') });
     const root = () => vscode.workspace.workspaceFolders?.[0]?.uri.scheme === 'file' ? vscode.workspace.workspaceFolders[0].uri.fsPath : null;
-    // Agent permissions (Codex-style) and the optional Landlock command sandbox.
+    // Agent permissions (Codex-style) and the optional command sandbox
+    // (Landlock on Linux, Seatbelt on macOS; see product/sandbox).
     const permission = () => { const value = vscode.workspace.getConfiguration('aiGui.agent').get('permissions'); return ['ask', 'auto', 'full'].includes(value) ? value : 'auto'; };
     const sandbox = { path: null };
     const helper = path.join(context.extensionPath, 'sandbox/ai-gui-sandbox');

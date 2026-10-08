@@ -266,7 +266,7 @@
           "default": 0.96,
           "minimum": 0.5,
           "maximum": 1,
-          "description": "Window opacity, from 0.5 to 1 (opaque); also Display → Window Opacity. Applies on Linux with X11 and a compositing window manager; other systems ignore it for now."
+          "description": "Window opacity, from 0.5 to 1 (opaque); also Display → Window Opacity. Applies on macOS, and on Linux with X11 and a compositing window manager; Wayland ignores it."
         },
         "aiGui.updates.check": {
           "type": "boolean",

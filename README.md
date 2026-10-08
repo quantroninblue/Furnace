@@ -380,7 +380,7 @@ Type `/` in the message box for the command list:
 | --- | --- |
 | The agent says it has no file or command tools | Make sure you're in **Build** mode, a folder is open, and it is trusted (**Trust Folder** above the message box). |
 | Commands fail with "Permission denied" or network errors in Auto mode | That's the sandbox. Let the agent retry with escalation and approve it, or switch to Ask first or Full access for that task. |
-| "no sandbox" next to the project name | Furnace couldn't build or start its sandbox (it needs a C compiler and a recent Linux kernel). In Auto mode, commands will ask for approval instead. |
+| "no sandbox" next to the project name | Furnace couldn't build or start its sandbox (on Linux it needs a C compiler and a recent kernel). In Auto mode, commands will ask for approval instead. |
 | Claude sign-in finished but nothing changed | Open Connections and choose **Refresh Connections**. |
 | "Remember securely" is greyed out | Your system has no unlocked keychain; keys last for the current session only. |
 | An Ollama model never uses tools | The model doesn't support tool calling; choose one that does. |
