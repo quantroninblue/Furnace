@@ -87,7 +87,7 @@ async function startHost({ pipe, host, scope, page: pageId, profile, hardExit = 
             ? allowed(details.url) : /^(https?:|wss?:|data:|blob:)/i.test(details.url);
         callback({ cancel: !permitted });
     });
-    window = new BrowserWindow({ title: 'Research · AI GUI', width: 1120, height: 820, minWidth: 640, minHeight: 400,
+    window = new BrowserWindow({ title: 'Research · Furnace', width: 1120, height: 820, minWidth: 640, minHeight: 400,
         backgroundColor: '#202020', show: false, autoHideMenuBar: true,
         webPreferences: { preload: path.join(__dirname, 'controls-preload.cjs'), partition: `controls-${host}`,
             sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false } });

@@ -22,7 +22,7 @@ try {
     await expect(conversation.locator('#mode-label')).toHaveText('Build');
     await expect(conversation.getByText('Restricted Mode', { exact: true })).toBeVisible();
     await conversation.getByRole('button', { name: 'Trust Folder', exact: true }).click();
-    await expect(dialog).toContainText('so the AI GUI agent can read, edit and create files and run commands');
+    await expect(dialog).toContainText('so the Furnace agent can read, edit and create files and run commands');
     await test.page.screenshot({ path: path.join(test.artifacts, 'trust-dialog.png') });
     await test.page.getByRole('button', { name: 'Trust Folder & Continue' }).click();
     await expect(conversation.getByText('Restricted Mode', { exact: true })).toHaveCount(0);

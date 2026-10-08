@@ -1,6 +1,6 @@
 # Data usage and privacy
 
-AI GUI runs entirely on your computer. There is no AI GUI server, account or
+Furnace runs entirely on your computer. There is no Furnace server, account or
 cloud service, so we (the developers) never receive your prompts, files, API keys
 or AI-provider sign-ins. This page explains what the app does with your data and
 where it lives.
@@ -10,9 +10,9 @@ where it lives.
 - **We never see or store your credentials.** API keys and sign-in tokens stay on
   your device, used only to talk directly to the provider you chose.
 - **Your conversations stay on your computer.** They are saved as local files in
-  your AI GUI profile, not uploaded anywhere except to the AI provider you are
+  your Furnace profile, not uploaded anywhere except to the AI provider you are
   chatting with, as part of the conversation.
-- **No telemetry or analytics.** AI GUI collects no usage data, and its launcher
+- **No telemetry or analytics.** Furnace collects no usage data, and its launcher
   turns off the editor's built-in telemetry and update checks. The only other
   network use is what you trigger: the Extensions view (Open VSX), the research
   browser, and web pages the agent fetches, plus a model-list check with the
@@ -21,7 +21,7 @@ where it lives.
 
 ## What is sent to AI providers
 
-When you send a message, AI GUI sends it **directly from your computer** to the
+When you send a message, Furnace sends it **directly from your computer** to the
 provider behind the model you picked (OpenAI, ChatGPT, Anthropic, Claude Code or
 your local Ollama). A request contains:
 
@@ -35,7 +35,7 @@ your local Ollama). A request contains:
 
 Some features send the same kind of content in extra requests to a model you chose:
 
-- **Token counts.** With API keys and ChatGPT, AI GUI asks the provider's
+- **Token counts.** With API keys and ChatGPT, Furnace asks the provider's
   token-counting endpoint how large the next request would be (the same messages,
   context and tool list), so the context meter is accurate. No reply is generated.
 - **Summaries.** When a conversation gets long, older messages are sent to the same
@@ -50,12 +50,12 @@ Some features send the same kind of content in extra requests to a model you cho
 Nothing is shared just because it is open or captured. Each provider handles that
 data under its own terms and privacy policy. API-key use is billed by the provider;
 ChatGPT sign-in uses your ChatGPT plan; Claude Code uses its own account and billing.
-AI GUI never switches you to a different paid route automatically.
+Furnace never switches you to a different paid route automatically.
 
 Local models through Ollama run on your machine; requests go to Ollama's local
 address (`127.0.0.1`).
 
-To have your connections ready, AI GUI checks them when it starts, when you open a
+To have your connections ready, Furnace checks them when it starts, when you open a
 different folder and when you refresh Connections: it asks each provider you have
 connected (a remembered API key or ChatGPT account) for its list of models, asks your
 installed Claude Code whether it is signed in, and looks for Ollama on your machine.
@@ -63,12 +63,12 @@ These checks send no conversation data.
 
 ## Credentials
 
-| Connection | What AI GUI keeps | Where |
+| Connection | What Furnace keeps | Where |
 | --- | --- | --- |
 | OpenAI / Anthropic admin key (optional) | Same as API keys. Used only to read your organization's cost report for the spend display; never for chats. | Same as API keys |
 | OpenAI / Anthropic API key | By default, held in memory for the current session only. If you tick **Remember securely on this device**, it is encrypted with your operating system's keychain (Electron safeStorage) before being written. | A separate local connection process; encrypted files in your profile |
 | ChatGPT sign-in | Sign-in happens in your browser with OpenAI. Access tokens are held in memory, or encrypted with your keychain if you chose to remember the account. The account email and the app's registration ID are saved so you can reconnect. | Same as above |
-| Claude Code | **Nothing.** AI GUI runs your installed Claude Code, which keeps its own sign-in. AI GUI never reads or copies Claude credentials. | Managed by Claude Code |
+| Claude Code | **Nothing.** Furnace runs your installed Claude Code, which keeps its own sign-in. Furnace never reads or copies Claude credentials. | Managed by Claude Code |
 | Ollama | Nothing. | — |
 
 - Keys and tokens are never written into your projects, conversations or logs, and
@@ -80,8 +80,8 @@ These checks send no conversation data.
 
 ## What is stored on your computer
 
-All app data lives in your AI GUI profile folder (by default
-`prototypes/code-oss/.profile/` in the AI GUI folder, or the folder set by
+All app data lives in your Furnace profile folder (by default
+`prototypes/code-oss/.profile/` in the Furnace folder, or the folder set by
 `AI_GUI_CODE_OSS_PROFILE`), under
 `user-data/User/globalStorage/ai-gui.workspace-product/`:
 
@@ -113,7 +113,7 @@ Other data:
   to version control.
 - **Editor settings** and window state are stored by the editor in the same profile.
 
-To remove everything, close AI GUI and delete the profile folder. To remove only
+To remove everything, close Furnace and delete the profile folder. To remove only
 credentials, use Disconnect / Sign Out, or delete the `connections/` folder.
 
 ## When the AI works on your files
@@ -136,7 +136,7 @@ computer, and only with your approval unless you chose Full access.
 ## Updates, diagnostics and feedback
 
 - **Update check.** Only when a build names an update feed (development builds do
-  not), AI GUI downloads that feed once a day to see whether a newer version exists.
+  not), Furnace downloads that feed once a day to see whether a newer version exists.
   The request carries nothing but the usual HTTP headers. Turn it off with
   `aiGui.updates.check`. Updates are never installed automatically.
 - **Copy Diagnostics** puts versions, settings, connection states and recent log
@@ -144,7 +144,7 @@ computer, and only with your approval unless you chose Full access.
   It contains no conversation text or file contents.
 - **Send Feedback** opens your message (and diagnostics if you choose) in your
   browser or email app, or copies it, so you can read it before sending. Nothing is
-  sent by AI GUI itself.
+  sent by Furnace itself.
 
 ## Research browser
 
@@ -155,7 +155,7 @@ go to DuckDuckGo. Captured text stays local until you share it with a conversati
 
 ## Extensions
 
-AI GUI is built on Code OSS (the open-source core of Visual Studio Code). The
+Furnace is built on Code OSS (the open-source core of Visual Studio Code). The
 Extensions view searches and downloads extensions from [Open VSX](https://open-vsx.org)
 (run by the Eclipse Foundation), which sees those requests. The built-in JavaScript
 debugger is downloaded once from its GitHub release during setup and checked against

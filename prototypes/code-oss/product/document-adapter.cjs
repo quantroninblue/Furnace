@@ -59,7 +59,7 @@ class CodeOssDocuments {
         };
         remember(vscode.window.activeTextEditor);
         context.subscriptions.push(this.files,
-            vscode.workspace.registerFileSystemProvider('ai-gui-review', this.files, { isCaseSensitive: true }),
+            vscode.workspace.registerFileSystemProvider('furnace-review', this.files, { isCaseSensitive: true }),
             vscode.window.onDidChangeActiveTextEditor(remember),
             vscode.window.tabGroups.onDidChangeTabs(event => {
                 for (const tab of event.closed) {
@@ -99,8 +99,8 @@ class CodeOssDocuments {
         await vscode.window.showTextDocument(source, { preview: false, preserveFocus: true });
         const id = randomUUID();
         const name = vscode.Uri.parse(proposal.uri).path.split('/').pop() || 'document.txt';
-        const base = vscode.Uri.from({ scheme: 'ai-gui-review', path: `/${id}/base/${name}` });
-        const proposed = vscode.Uri.from({ scheme: 'ai-gui-review', path: `/${id}/proposed/${name}` });
+        const base = vscode.Uri.from({ scheme: 'furnace-review', path: `/${id}/base/${name}` });
+        const proposed = vscode.Uri.from({ scheme: 'furnace-review', path: `/${id}/proposed/${name}` });
         const review = { base, proposed };
         this.files.add(base, proposal.text, true);
         this.files.add(proposed, proposal.replacement, false);

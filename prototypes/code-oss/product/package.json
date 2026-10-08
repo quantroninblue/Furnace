@@ -1,6 +1,6 @@
 {
   "name": "workspace-product",
-  "displayName": "AI GUI Workspace",
+  "displayName": "Furnace Workspace",
   "description": "Private foundation comparison: conversations, planning and reviewed edits.",
   "publisher": "ai-gui",
   "version": "0.1.0",
@@ -21,72 +21,72 @@
     "commands": [
       {
         "command": "aiGui.home",
-        "title": "AI GUI: Open Workspace"
+        "title": "Furnace: Open Workspace"
       },
       {
         "command": "aiGui.tour",
-        "title": "AI GUI: Getting Started"
+        "title": "Furnace: Getting Started"
       },
       {
         "command": "aiGui.connections",
-        "title": "AI GUI: Connections"
+        "title": "Furnace: Connections"
       },
       {
         "command": "aiGui.proposeFixture",
-        "title": "AI GUI: Propose Example Edit"
+        "title": "Furnace: Propose Example Edit"
       },
       {
         "command": "aiGui.applyReview",
-        "title": "AI GUI: Apply Reviewed Changes"
+        "title": "Furnace: Apply Reviewed Changes"
       },
       {
         "command": "aiGui.discardReview",
-        "title": "AI GUI: Discard Proposal"
+        "title": "Furnace: Discard Proposal"
       },
       {
         "command": "aiGui.openResearch",
-        "title": "AI GUI: Open Research"
+        "title": "Furnace: Open Research"
       },
       {
         "command": "aiGui.focusConversation",
-        "title": "AI GUI: Focus Conversation",
+        "title": "Furnace: Focus Conversation",
         "icon": "$(comment-discussion)"
       },
       {
         "command": "aiGui.newChat",
-        "title": "AI GUI: New Chat"
+        "title": "Furnace: New Chat"
       },
       {
         "command": "aiGui.history",
-        "title": "AI GUI: Chat History"
+        "title": "Furnace: Chat History"
       },
       {
         "command": "aiGui.nextMode",
-        "title": "AI GUI: Next Mode (Discuss, Plan, Build, Research)"
+        "title": "Furnace: Next Mode (Discuss, Plan, Build, Research)"
       },
       {
         "command": "aiGui.stop",
-        "title": "AI GUI: Stop Reply"
+        "title": "Furnace: Stop Reply"
       },
       {
         "command": "aiGui.approve",
-        "title": "AI GUI: Approve Pending Action"
+        "title": "Furnace: Approve Pending Action"
       },
       {
         "command": "aiGui.deny",
-        "title": "AI GUI: Deny Pending Action"
+        "title": "Furnace: Deny Pending Action"
       },
       {
         "command": "aiGui.compact",
-        "title": "AI GUI: Condense Conversation Now"
+        "title": "Furnace: Condense Conversation Now"
       },
       {
         "command": "aiGui.copyDiagnostics",
-        "title": "AI GUI: Copy Diagnostics for a Bug Report"
+        "title": "Furnace: Copy Diagnostics for a Bug Report"
       },
       {
         "command": "aiGui.showLog",
-        "title": "AI GUI: Show Log"
+        "title": "Furnace: Show Log"
       },
       {
         "command": "aiGui.scm.open",
@@ -115,51 +115,51 @@
       },
       {
         "command": "aiGui.inlineEdit",
-        "title": "AI GUI: Inline Edit Selection"
+        "title": "Furnace: Inline Edit Selection"
       },
       {
         "command": "aiGui.inlineEdit.accept",
-        "title": "AI GUI: Accept Inline Edit"
+        "title": "Furnace: Accept Inline Edit"
       },
       {
         "command": "aiGui.inlineEdit.reject",
-        "title": "AI GUI: Reject Inline Edit"
+        "title": "Furnace: Reject Inline Edit"
       },
       {
         "command": "aiGui.inlineEdit.cancel",
-        "title": "AI GUI: Cancel Inline Edit"
+        "title": "Furnace: Cancel Inline Edit"
       },
       {
         "command": "aiGui.inlineEdit.diff",
-        "title": "AI GUI: Show Inline Edit Diff"
+        "title": "Furnace: Show Inline Edit Diff"
       },
       {
         "command": "aiGui.agentHunk.keep",
-        "title": "AI GUI: Keep Agent Change"
+        "title": "Furnace: Keep Agent Change"
       },
       {
         "command": "aiGui.agentHunk.revert",
-        "title": "AI GUI: Revert Agent Change"
+        "title": "Furnace: Revert Agent Change"
       },
       {
         "command": "aiGui.background.start",
-        "title": "AI GUI: Start Background Task"
+        "title": "Furnace: Start Background Task"
       },
       {
         "command": "aiGui.timeline",
-        "title": "AI GUI: Conversation Timeline"
+        "title": "Furnace: Conversation Timeline"
       },
       {
         "command": "aiGui.reviewLastChanges",
-        "title": "AI GUI: Second Opinion on Last Changes"
+        "title": "Furnace: Second Opinion on Last Changes"
       },
       {
         "command": "aiGui.sendFeedback",
-        "title": "AI GUI: Send Feedback"
+        "title": "Furnace: Send Feedback"
       },
       {
         "command": "aiGui.checkForUpdates",
-        "title": "AI GUI: Check for Updates"
+        "title": "Furnace: Check for Updates"
       }
     ],
     "viewsContainers": {
@@ -173,7 +173,7 @@
       "activitybar": [
         {
           "id": "aiGuiWorkspace",
-          "title": "AI GUI Workspace",
+          "title": "Furnace Workspace",
           "icon": "media/workspace.svg"
         }
       ]
@@ -196,13 +196,13 @@
     },
     "themes": [
       {
-        "label": "AI GUI Charcoal",
+        "label": "Furnace Charcoal",
         "uiTheme": "vs-dark",
         "path": "./themes/charcoal.json"
       }
     ],
     "configuration": {
-      "title": "AI GUI",
+      "title": "Furnace",
       "properties": {
         "aiGui.openOnStartup": {
           "type": "boolean",
@@ -243,7 +243,7 @@
           "type": "number",
           "default": 0,
           "minimum": 0,
-          "description": "Monthly API spend (US dollars) that AI GUI warns about, counted from replies made with API keys on this machine. 0: no warning."
+          "description": "Monthly API spend (US dollars) that Furnace warns about, counted from replies made with API keys on this machine. 0: no warning."
         },
         "aiGui.pricing": {
           "type": "object",
@@ -261,10 +261,17 @@
           },
           "description": "Price overrides in US dollars per million tokens, keyed by model id, for example {\"openai/gpt-5\": {\"input\": 1.25, \"output\": 10}}."
         },
+        "aiGui.window.opacity": {
+          "type": "number",
+          "default": 0.96,
+          "minimum": 0.5,
+          "maximum": 1,
+          "description": "Window opacity, from 0.5 to 1 (opaque). Applies on Linux with X11 and a compositing window manager; other systems ignore it for now."
+        },
         "aiGui.updates.check": {
           "type": "boolean",
           "default": true,
-          "description": "Check once a day whether a newer AI GUI is available (only when this build names an update feed). Nothing else is sent."
+          "description": "Check once a day whether a newer Furnace is available (only when this build names an update feed). Nothing else is sent."
         },
         "aiGui.support.developerTools": {
           "type": "boolean",
@@ -277,7 +284,7 @@
       "workbench.activityBar.location": "top",
       "workbench.layoutControl.enabled": false,
       "workbench.tips.enabled": false,
-      "window.title": "${dirty}${rootName}${separator}AI GUI",
+      "window.title": "${dirty}${rootName}${separator}Furnace",
       "editor.minimap.enabled": false,
       "editor.renderLineHighlight": "gutter"
     },
@@ -439,7 +446,7 @@
     "walkthroughs": [
       {
         "id": "aiGui.start",
-        "title": "Get Started with AI GUI",
+        "title": "Get Started with Furnace",
         "description": "Connect a model, open a project and run a first reviewed task.",
         "steps": [
           {
@@ -498,7 +505,7 @@
           {
             "id": "privacy",
             "title": "Your data stays yours",
-            "description": "No AI GUI account and no telemetry. Conversations, rules and the activity log stay on this device; only what you send goes to the model you chose.",
+            "description": "No Furnace account and no telemetry. Conversations, rules and the activity log stay on this device; only what you send goes to the model you chose.",
             "media": {
               "markdown": "media/walkthrough/privacy.md"
             }

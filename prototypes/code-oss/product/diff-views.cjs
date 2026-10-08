@@ -5,8 +5,8 @@ const path = require('node:path');
 
 function createDiffViews({ context, conversation, status, text }) {
     const previews = new Map();
-    context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('ai-gui-preview', { provideTextDocumentContent: uri => previews.get(uri.path) ?? '' }));
-    const preview = (key, value) => { previews.set(key, value); return vscode.Uri.from({ scheme: 'ai-gui-preview', path: key }); };
+    context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider('furnace-preview', { provideTextDocumentContent: uri => previews.get(uri.path) ?? '' }));
+    const preview = (key, value) => { previews.set(key, value); return vscode.Uri.from({ scheme: 'furnace-preview', path: key }); };
     const exists = file => fs.stat(file).then(() => true, () => false);
     // Recorded content before against the file as it is now (or the recorded result if it is gone).
     async function showEntries(entries, id, label) {

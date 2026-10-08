@@ -3,6 +3,7 @@ import type { Mode } from "../protocol";
 import { Icon, type IconName } from "../icons";
 import { post, setHistoryOpen, setTimelineOpen, useStore } from "../store";
 import { tourSteps } from "../tour";
+import { Logo } from "../logo";
 import { Composer, modeNotes } from "./composer";
 import { TimelinePane } from "./timeline";
 import { MessageList } from "./messages";
@@ -52,7 +53,7 @@ export function ConversationPanel() {
         <MessageList messages={messages} models={models} busy={chat.busy || chat.switching}>
           {!messages.length && (
             <div id="empty-chat" className="chat-empty">
-              <div className="assistant-avatar"><Icon name="sparkle" size={20} /></div>
+              <Logo small />
               <h3>What are we thinking about?</h3>
               <p>Bring a half-formed idea, a tricky function, or the question you haven’t asked yet.</p>
               <div className="prompt-suggestions">

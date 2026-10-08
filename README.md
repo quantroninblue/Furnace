@@ -1,20 +1,29 @@
-# AI GUI
+# Furnace
+
+```
+███████╗██╗   ██╗██████╗ ███╗   ██╗ █████╗  ██████╗███████╗
+██╔════╝██║   ██║██╔══██╗████╗  ██║██╔══██╗██╔════╝██╔════╝
+█████╗  ██║   ██║██████╔╝██╔██╗ ██║███████║██║     █████╗
+██╔══╝  ██║   ██║██╔══██╗██║╚██╗██║██╔══██║██║     ██╔══╝
+██║     ╚██████╔╝██║  ██║██║ ╚████║██║  ██║╚██████╗███████╗
+╚═╝      ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝ ╚═════╝╚══════╝
+```
 
 A desktop coding workspace where you and an AI agent work on the same project. Plan
 an idea, research it, and let the agent read, edit and create files and run
 commands, with you deciding how much it may do on its own.
 
-AI GUI is built on Code OSS, the open-source core of Visual Studio Code, so you
+Furnace is built on Code OSS, the open-source core of Visual Studio Code, so you
 also get a full editor, terminals, Git, debugging and extensions.
 
-> **Preview.** AI GUI is a Linux development build (tested on Ubuntu 24.04). There
+> **Preview.** Furnace is a Linux development build (tested on Ubuntu 24.04). There
 > is no installer yet; you run it from this repository. Windows and macOS are not
 > supported yet. The from-source setup below has so far been used on one
 > development machine; please report anything that doesn't work.
 
 ## Your data stays yours
 
-- **No AI GUI account, no server, no telemetry.** We never receive your prompts,
+- **No Furnace account, no server, no telemetry.** We never receive your prompts,
   files, keys or sign-ins.
 - **Only what you send leaves your computer**, and only to the model you chose:
   your message, the context you shared, and what the agent reads to do the task.
@@ -42,7 +51,7 @@ Details: [DATA_USAGE.md](DATA_USAGE.md).
 
 You need Linux x86-64, Git, Python 3, a C/C++ compiler (`build-essential`),
 `pkg-config` and about 10 GB of free disk space. The editor core is built once
-from a pinned Code OSS release; later updates only rebuild AI GUI itself.
+from a pinned Code OSS release; later updates only rebuild Furnace itself.
 
 From the repository folder:
 
@@ -69,21 +78,21 @@ node scripts/setup.mjs extensions extensions-startup extensions-json extensions-
 node scripts/setup.mjs extensions-debug builtin-extensions
 cd ../..
 
-# 5. Install AI GUI's own dependencies, build and start
+# 5. Install Furnace's own dependencies, build and start
 npm ci
 npm run build
 npm start
 ```
 
-After the first setup, start AI GUI with `npm run build && npm start` (or just
+After the first setup, start Furnace with `npm run build && npm start` (or just
 `npm start` if nothing changed).
 
 On first launch, a **Getting started** guide on the workspace page walks you
 through connecting a model, opening and trusting a folder, choosing permissions
 and giving the agent its first task. Each step ticks itself off as you go. Skip it
-any time and bring it back with `/tour` or **AI GUI: Getting Started** in the
+any time and bring it back with `/tour` or **Furnace: Getting Started** in the
 command palette (`Ctrl+Shift+P`). **Help → Welcome** also has a short *Get Started
-with AI GUI* walkthrough.
+with Furnace* walkthrough.
 
 ## Connect a model
 
@@ -152,7 +161,7 @@ output one click away.
 ### Trust the folder first
 
 The agent only touches files in a folder you trust. If the folder isn't trusted
-yet, AI GUI asks when you send your first Build or Plan message; you can also click
+yet, Furnace asks when you send your first Build or Plan message; you can also click
 **Trust Folder** above the message box. No folder open? Click **Open Folder** there.
 
 ### Choose how much it may do on its own
@@ -201,13 +210,13 @@ Failed** (or **It Works** / **It Doesn't** when the agent asks in the chat).
 ### Background tasks
 
 For longer work, start a task in the background: type `/background add tests for
-the parser`, use the **Build** page, or **AI GUI: Start Background Task**. The agent
+the parser`, use the **Build** page, or **Furnace: Start Background Task**. The agent
 works in a separate Git worktree, a copy of the project as it is now (including
 uncommitted and untracked files), while you keep editing. Approvals arrive as
 notifications. When it finishes, **Review** shows each changed file, **Apply to
 Project** brings the changes into your working tree (nothing is staged or
 committed), and **Discard** deletes the worktree. If you changed the same lines in
-the meantime, AI GUI asks before merging and marks any conflicts. Background tasks
+the meantime, Furnace asks before merging and marks any conflicts. Background tasks
 need a Git repository with at least one commit; up to three run at once.
 
 ### Review, revert and rewind
@@ -231,7 +240,7 @@ added (A), modified (M) or deleted (D), with line counts.
   messages with the files changed and checks verified since. Click one to jump to
   it, **Compare with Now** to diff every file the agent changed from there, or
   **Restore** to rewind to it. Branches made from a message appear under it.
-- If you edited a file after the agent did, AI GUI warns you before overwriting your
+- If you edited a file after the agent did, Furnace warns you before overwriting your
   changes.
 - Changes made by **commands** the agent ran (for example `npm install`) are not
   tracked and are not undone.
@@ -248,7 +257,7 @@ added (A), modified (M) or deleted (D), with line counts.
 
 ### Inline edits
 
-Select code in the editor and press `Ctrl+Alt+E` (or right-click → **AI GUI: Inline
+Select code in the editor and press `Ctrl+Alt+E` (or right-click → **Furnace: Inline
 Edit Selection**, or `/edit`), then describe the change. The new code appears in place,
 highlighted, with the original on hover. **Ctrl+Enter** or **Accept** keeps it,
 **Escape** or **Reject** puts the original back, and **Show Diff** compares them. With
@@ -290,7 +299,7 @@ Browser**. It opens in a separate, sandboxed window with its own temporary sessi
   key** (OpenAI `sk-admin-…` or Anthropic `sk-ant-admin…`), used only for that.
 - **ChatGPT plan:** the message box shows how much of your plan's current window is
   used, as OpenAI reports it.
-- ChatGPT, Claude Code and Ollama replies have no per-reply cost in AI GUI.
+- ChatGPT, Claude Code and Ollama replies have no per-reply cost in Furnace.
 
 ## Debugging and extensions
 
@@ -299,13 +308,13 @@ if installed). Open a project, then **Run and Debug** in the sidebar, or press
 **F5**. Add a `.vscode/launch.json` for custom setups.
 
 For **other languages** (Python, C/C++, Go, Java, Rust and more), install a debugger
-from the **Extensions** view. AI GUI uses [Open VSX](https://open-vsx.org), the open
+from the **Extensions** view. Furnace uses [Open VSX](https://open-vsx.org), the open
 extension registry used by VSCodium; Microsoft's own marketplace isn't available
 to editors built from Code OSS. Search for the language (for example **Python
 Debugger**) and choose **Install**. The first time you install from a publisher,
 you'll be asked whether you trust it.
 
-Extensions run with your user permissions, outside AI GUI's agent sandbox, so
+Extensions run with your user permissions, outside Furnace's agent sandbox, so
 install only ones you trust.
 
 ## Commands and shortcuts
@@ -342,7 +351,7 @@ Type `/` in the message box for the command list:
   history · `Ctrl+Alt+M` or `Alt+1…4` switch mode · `Ctrl+Alt+W` workspace view ·
   `Ctrl+Alt+.` stop · `Ctrl+Alt+Enter` / `Ctrl+Alt+Backspace` approve / deny ·
   `Ctrl+Alt+E` inline edit. Change them with `/keys`.
-- **Text size:** AI GUI starts at 120% zoom. Use **Text size A− / A+** at the top of
+- **Text size:** Furnace starts at 120% zoom. Use **Text size A− / A+** at the top of
   the workspace page, `/zoom`, or `Ctrl+=` / `Ctrl+-` to adjust it.
 - The **Ask / Run** switch in the message box toggles between talking to the agent
   and running your own commands.
@@ -368,7 +377,7 @@ Type `/` in the message box for the command list:
 | --- | --- |
 | The agent says it has no file or command tools | Make sure you're in **Build** mode, a folder is open, and it is trusted (**Trust Folder** above the message box). |
 | Commands fail with "Permission denied" or network errors in Auto mode | That's the sandbox. Let the agent retry with escalation and approve it, or switch to Ask first or Full access for that task. |
-| "no sandbox" next to the project name | AI GUI couldn't build or start its sandbox (it needs a C compiler and a recent Linux kernel). In Auto mode, commands will ask for approval instead. |
+| "no sandbox" next to the project name | Furnace couldn't build or start its sandbox (it needs a C compiler and a recent Linux kernel). In Auto mode, commands will ask for approval instead. |
 | Claude sign-in finished but nothing changed | Open Connections and choose **Refresh Connections**. |
 | "Remember securely" is greyed out | Your system has no unlocked keychain; keys last for the current session only. |
 | An Ollama model never uses tools | The model doesn't support tool calling; choose one that does. |
@@ -376,10 +385,10 @@ Type `/` in the message box for the command list:
 | "Background tasks need the project to be a Git repository" | Run `git init` and make a first commit, or use the normal conversation. |
 | A local model forgets earlier messages | Ollama requests use a 16k-token context window; long chats are condensed. Pick a model with a larger context for long tasks. |
 | Inline edit says the file changed | You typed while the model worked; run the edit again. |
-| Something else went wrong | **Copy Diagnostics** (Start page or `/diagnostics`) copies versions, settings and recent errors without conversation text or keys. **Send Feedback** opens a report you can check before sending. **AI GUI: Show Log** opens the log. |
+| Something else went wrong | **Copy Diagnostics** (Start page or `/diagnostics`) copies versions, settings and recent errors without conversation text or keys. **Send Feedback** opens a report you can check before sending. **Furnace: Show Log** opens the log. |
 | Run and Debug says "All debug extensions are disabled" | The built-in debugger wasn't downloaded. Run `node scripts/setup.mjs extensions-debug builtin-extensions` in `prototypes/code-oss`, then restart. |
 
 ## License and notices
 
-AI GUI is private software in preview. Code OSS and other third-party components
+Furnace is private software in preview. Code OSS and other third-party components
 keep their own licenses and notices.

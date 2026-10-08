@@ -28,7 +28,7 @@ function createSupport({ context, conversation, session, root, permission, sandb
     async function diagnostics() {
         const chat = conversation.snapshot(), info = await product(), usage = chat.usage;
         return [
-            `AI GUI ${info.version} · Code OSS ${vscode.version} · Electron ${process.versions.electron} · Node ${process.versions.node}`,
+            `Furnace ${info.version} · Code OSS ${vscode.version} · Electron ${process.versions.electron} · Node ${process.versions.node}`,
             `OS: ${os.type()} ${os.release()} ${os.arch()} · session ${process.env.XDG_SESSION_TYPE || 'unknown'} · zoom ${vscode.workspace.getConfiguration('window').get('zoomLevel')}`,
             `Project: ${root() ? `open, ${vscode.workspace.isTrusted ? 'trusted' : 'restricted'}` : 'none'} · permissions ${permission()} · sandbox ${sandbox.path ? 'available' : 'unavailable'} · mode ${session.state.mode}`,
             `Model: ${chat.model || 'none'} · context ${usage ? `~${usage.used} of ${usage.window} tokens (${usage.source || 'estimated'}), ${usage.condensed} summaries` : 'n/a'}`,
@@ -52,7 +52,7 @@ function createSupport({ context, conversation, session, root, permission, sandb
             { label: 'Only my message', value: false }], { title: 'Send Feedback', ignoreFocusOut: true });
         if (!include) return;
         const info = await product(), support = info.support || {};
-        const body = `${summary.trim()}\n\n${include.value ? `---\n${await diagnostics()}` : `AI GUI ${info.version} · ${os.type()} ${os.arch()}`}`;
+        const body = `${summary.trim()}\n\n${include.value ? `---\n${await diagnostics()}` : `Furnace ${info.version} · ${os.type()} ${os.arch()}`}`;
         const title = `Feedback: ${summary.trim().split('\n')[0].slice(0, 80)}`;
         if (support.issues) {
             const url = new URL(support.issues); url.searchParams.set('title', title); url.searchParams.set('body', body.slice(0, 6000));
@@ -69,7 +69,7 @@ function createSupport({ context, conversation, session, root, permission, sandb
     // No feed configured, or aiGui.updates.check off: nothing is fetched.
     async function checkForUpdates(manual = false) {
         const info = await product(), feed = info.updates?.feed;
-        if (!feed) { if (manual) status('This build has no update feed. Download new versions from where you got AI GUI.'); return null; }
+        if (!feed) { if (manual) status('This build has no update feed. Download new versions from where you got Furnace.'); return null; }
         if (!manual && !vscode.workspace.getConfiguration('aiGui.updates').get('check', true)) return null;
         if (!manual && Date.now() - (context.globalState.get('updateCheckedAt') || 0) < 20 * 3600 * 1000) return null;
         let latest;
@@ -79,9 +79,9 @@ function createSupport({ context, conversation, session, root, permission, sandb
             latest = readFeed(await response.json());
         } catch (error) { if (manual) status(`Could not check for updates: ${error.message}`); return null; }
         await context.globalState.update('updateCheckedAt', Date.now());
-        if (!newer(latest.version, info.version)) { if (manual) status(`AI GUI ${info.version} is up to date.`); return null; }
+        if (!newer(latest.version, info.version)) { if (manual) status(`Furnace ${info.version} is up to date.`); return null; }
         if (!manual && context.globalState.get('updateSkipped') === latest.version) return latest;
-        const choice = await vscode.window.showInformationMessage(`AI GUI ${latest.version} is available (you have ${info.version}).${latest.notes ? ` ${latest.notes}` : ''}`, 'Download', 'Skip This Version');
+        const choice = await vscode.window.showInformationMessage(`Furnace ${latest.version} is available (you have ${info.version}).${latest.notes ? ` ${latest.notes}` : ''}`, 'Download', 'Skip This Version');
         if (choice === 'Download') await vscode.env.openExternal(vscode.Uri.parse(latest.url));
         if (choice === 'Skip This Version') await context.globalState.update('updateSkipped', latest.version);
         return latest;
