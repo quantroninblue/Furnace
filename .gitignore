@@ -20,3 +20,6 @@ playwright-report/
 
 # Retained original app and migration reference; local only.
 /legacy/
+
+# macOS release build output (scripts/package-macos.mjs).
+/prototypes/code-oss/VSCode-darwin-*/

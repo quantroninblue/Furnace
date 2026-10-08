@@ -13,6 +13,7 @@ const { CommandTerminals } = require('./terminals.cjs');
 const { AgentChanges } = require('./agent-scm.cjs');
 const { createSupport } = require('./support.cjs');
 const { createWindowOpacity } = require('./window-opacity.cjs');
+const { electronBinary } = require('./electron-binary.cjs');
 const { createDiffViews } = require('./diff-views.cjs');
 const { createBackground } = require('./background-tasks.cjs');
 const { createInlineEdits } = require('./inline-edit.cjs');
@@ -90,7 +91,7 @@ exports.activate = async context => {
         }
     });
     const reviews = new ProductReview(session, documents, broadcast);
-    const research = new ResearchController({ executable: process.execPath, entry: path.join(context.extensionPath, 'research/entry.cjs') }, broadcast);
+    const research = new ResearchController({ executable: electronBinary(), entry: path.join(context.extensionPath, 'research/entry.cjs') }, broadcast);
     activeResearch = research;
     context.subscriptions.push({ dispose: () => { void research.dispose(); } });
     context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => { void conversation.switch().then(discoverConnections, error => status(error.message)); }));
@@ -103,7 +104,7 @@ exports.activate = async context => {
     }));
     context.subscriptions.push({ dispose: () => reviews.discard() });
     files = new AgentFileReviews(documents, reviews);
-    const provider = new AssistantClient({ executable: process.execPath, entry: path.join(context.extensionPath, 'assistant/entry.cjs'), directory: path.join(context.globalStorageUri.fsPath, 'connections') });
+    const provider = new AssistantClient({ executable: electronBinary(), entry: path.join(context.extensionPath, 'assistant/entry.cjs'), directory: path.join(context.globalStorageUri.fsPath, 'connections') });
     const root = () => vscode.workspace.workspaceFolders?.[0]?.uri.scheme === 'file' ? vscode.workspace.workspaceFolders[0].uri.fsPath : null;
     // Agent permissions (Codex-style) and the optional command sandbox
     // (Landlock on Linux, Seatbelt on macOS; see product/sandbox).
