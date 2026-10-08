@@ -1,7 +1,8 @@
 'use strict';
 // Slight window translucency (aiGui.window.opacity). Code OSS has no opacity setting, so on
 // Linux/X11 this sets _NET_WM_WINDOW_OPACITY on this app's windows and the compositor applies
-// it to the whole window. Elsewhere (Wayland, macOS, no xprop) nothing happens.
+// it to the whole window. On macOS and Windows the main process applies it instead
+// (patches/window-opacity.patch); on Wayland or without xprop nothing happens.
 const fs = require('node:fs');
 const { execFile } = require('node:child_process');
 
