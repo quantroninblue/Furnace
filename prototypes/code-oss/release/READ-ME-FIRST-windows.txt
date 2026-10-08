@@ -3,8 +3,6 @@ Furnace test build for Windows (64-bit Windows 10 or 11)
 Install
 1. Run FurnaceUserSetup-x64.exe. It installs for your user only and does not
    need administrator rights.
-   (No installer wanted? Unzip Furnace-win32-x64.zip anywhere and run
-   Furnace.exe from the extracted folder.)
 2. Windows SmartScreen says "Windows protected your PC", because this test
    build is not code-signed. Click More info, then Run anyway.
 3. Recommended: install Git for Windows (https://git-scm.com/download/win).

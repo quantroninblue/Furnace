@@ -1,5 +1,5 @@
 # Furnace Windows test build (x64): a release build of the pinned Code OSS with the Furnace
-# extension built in, as a per-user installer and a portable .zip. Not code-signed.
+# extension built in, as a per-user installer. Not code-signed.
 # Runs on a pushed tag such as win-v0.1.0-test1, or by hand once this file is on the default branch.
 name: Windows build
 
@@ -104,7 +104,6 @@ jobs:
           name: Furnace-win32-x64
           path: |
             prototypes/code-oss/.cache/dist/FurnaceUserSetup-x64.exe
-            prototypes/code-oss/.cache/dist/Furnace-win32-x64.zip
             prototypes/code-oss/.cache/dist/READ ME FIRST.txt
           if-no-files-found: error
           retention-days: 14
