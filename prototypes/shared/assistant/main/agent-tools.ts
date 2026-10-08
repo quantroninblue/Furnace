@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentMode, Proposal, Selection, ResearchSource } from "../shared/types";
 import { unifiedDiff, diffStats } from "./diff";
 import { parsePatch, applyUpdate } from "./patch";
-import { runAgentCommand, type CommandTerminals } from "./commands";
+import { agentShell, runAgentCommand, type CommandTerminals } from "./commands";
 import type { BackgroundProcesses } from "./processes";
 import { suggestCommandRule } from "./permissions";
 import { briefSteps, checkText, findStep, type Check, type Evidence, type PlanStep } from "./plan-link";
@@ -107,7 +107,7 @@ const specs = {
   delete_path: spec("delete_path", "Delete a file, or a directory with recursive=true. Deleted items go to the system trash when available.", { path: str(PATH), recursive: bool("Required to delete a non-empty directory.") }),
   move_path: spec("move_path", "Move or rename a file or directory. Fails if the destination exists.", { source: str(PATH), destination: str(PATH) }),
   create_directory: spec("create_directory", "Create a directory (and missing parents).", { path: str(PATH) }),
-  run_command: spec("run_command", "Run a shell command (bash -c) and return its exit code and output. Non-interactive; use flags like --yes. In Auto mode commands run sandboxed: writes limited to the project and temp folders, no network. If a command fails because of the sandbox, rerun it with escalate=true and a justification; the user will be asked. For dev servers, watchers and other commands that keep running, set background=true: it returns after a few seconds with early output and a process id for process_output/process_stop.", { command: str("Shell command."), workdir: str("Working directory; null for the project root.", true), timeout_seconds: num("Timeout in seconds (default 120, max 1800); ignored for background commands."), escalate: bool("Run outside the sandbox (requires user approval)."), justification: str("Why escalation or this command is needed.", true), background: bool("Keep running after this call (dev server, watch mode). Read output with process_output.") }),
+  run_command: spec("run_command", `Run a shell command (${agentShell().name}) and return its exit code and output. Non-interactive; use flags like --yes. In Auto mode commands run sandboxed: writes limited to the project and temp folders, no network. If a command fails because of the sandbox, rerun it with escalate=true and a justification; the user will be asked. For dev servers, watchers and other commands that keep running, set background=true: it returns after a few seconds with early output and a process id for process_output/process_stop.`, { command: str("Shell command."), workdir: str("Working directory; null for the project root.", true), timeout_seconds: num("Timeout in seconds (default 120, max 1800); ignored for background commands."), escalate: bool("Run outside the sandbox (requires user approval)."), justification: str("Why escalation or this command is needed.", true), background: bool("Keep running after this call (dev server, watch mode). Read output with process_output.") }),
   process_output: spec("process_output", "Read new output and the status of a background process started with run_command background=true.", { id: str("Process id.") }),
   process_stop: spec("process_stop", "Stop a background process (and its child processes).", { id: str("Process id.") }),
   process_list: spec("process_list", "List background processes started in this conversation, with status."),

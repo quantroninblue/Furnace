@@ -29,8 +29,9 @@ if (host >= 0) {
     try {
         const product = require('../product.json');
         const custom = process.env.VSCODE_PORTABLE || process.env.VSCODE_APPDATA || process.argv.some(arg => arg === '--user-data-dir' || arg.startsWith('--user-data-dir='));
-        const appData = process.platform === 'darwin' ? path.join(process.env.HOME || '', 'Library/Application Support') : null;
-        if (!custom && appData && process.env.HOME) {
+        const appData = process.platform === 'darwin' ? process.env.HOME && path.join(process.env.HOME, 'Library/Application Support')
+            : process.platform === 'win32' ? process.env.APPDATA : null;
+        if (!custom && appData) {
             const settings = path.join(appData, product.nameShort, 'User/settings.json');
             if (!fs.existsSync(settings)) {
                 fs.mkdirSync(path.dirname(settings), { recursive: true });
