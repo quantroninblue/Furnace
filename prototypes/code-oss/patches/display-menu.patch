@@ -1,0 +1,116 @@
+diff --git a/src/vs/platform/menubar/electron-main/menubar.ts b/src/vs/platform/menubar/electron-main/menubar.ts
+index a3f53de0..86f8519f 100644
+--- a/src/vs/platform/menubar/electron-main/menubar.ts
++++ b/src/vs/platform/menubar/electron-main/menubar.ts
+@@ -329,6 +329,14 @@ export class Menubar extends Disposable {
+ 			menubar.append(viewMenuItem);
+ 		}
+ 
++		// Display (Furnace product patch)
++		if (this.shouldDrawMenu('Display')) {
++			const displayMenu = new Menu();
++			const displayMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mDisplay', comment: ['&& denotes a mnemonic'] }, "&&Display")), submenu: displayMenu });
++			this.setMenuById(displayMenu, 'Display');
++			menubar.append(displayMenuItem);
++		}
++
+ 		// Go
+ 		if (this.shouldDrawMenu('Go')) {
+ 			const gotoMenu = new Menu();
+diff --git a/src/vs/workbench/browser/parts/titlebar/displayMenu.ts b/src/vs/workbench/browser/parts/titlebar/displayMenu.ts
+new file mode 100644
+index 00000000..fdb3cc56
+--- /dev/null
++++ b/src/vs/workbench/browser/parts/titlebar/displayMenu.ts
+@@ -0,0 +1,78 @@
++/*---------------------------------------------------------------------------------------------
++ *  Furnace product patch (patches/display-menu.patch): the Display menu. Window Opacity
++ *  opens a small slider that writes the Furnace extension's aiGui.window.opacity setting;
++ *  the extension applies it to the window.
++ *--------------------------------------------------------------------------------------------*/
++
++import { $, append, addDisposableListener, getActiveWindow, isAncestor } from '../../../../base/browser/dom.js';
++import { DisposableStore } from '../../../../base/common/lifecycle.js';
++import { localize, localize2 } from '../../../../nls.js';
++import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
++import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
++import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
++import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
++
++const MenubarDisplayMenu = new MenuId('MenubarDisplayMenu');
++const opacitySetting = 'aiGui.window.opacity';
++
++MenuRegistry.appendMenuItem(MenuId.MenubarMainMenu, {
++	submenu: MenubarDisplayMenu,
++	title: {
++		value: 'Display',
++		original: 'Display',
++		mnemonicTitle: localize({ key: 'mDisplay', comment: ['&& denotes a mnemonic'] }, "&&Display")
++	},
++	order: 4.5
++});
++
++registerAction2(class WindowOpacityAction extends Action2 {
++	constructor() {
++		super({
++			id: 'furnace.display.windowOpacity',
++			title: { ...localize2('windowOpacity', "Window Opacity..."), mnemonicTitle: localize({ key: 'miWindowOpacity', comment: ['&& denotes a mnemonic'] }, "Window &&Opacity...") },
++			category: localize2('display', "Display"),
++			f1: true,
++			menu: { id: MenubarDisplayMenu, group: '1_window', order: 1 }
++		});
++	}
++
++	run(accessor: ServicesAccessor): void {
++		const configuration = accessor.get(IConfigurationService);
++		const contextView = accessor.get(IContextViewService);
++		const width = 300;
++		let root: HTMLElement | undefined;
++		contextView.showContextView({
++			getAnchor: () => ({ x: Math.max(0, (getActiveWindow().innerWidth - width) / 2), y: 8 }),
++			render: container => {
++				const disposables = new DisposableStore();
++				root = append(container, $('.furnace-display-popover'));
++				root.style.cssText = `width: ${width}px; box-sizing: border-box; padding: 12px 14px; border-radius: 8px; color: var(--vscode-menu-foreground); background: var(--vscode-menu-background); border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, transparent)); box-shadow: 0 8px 24px var(--vscode-widget-shadow);`;
++				const header = append(root, $('div'));
++				header.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 8px;';
++				append(header, $('span', undefined, localize('windowOpacityLabel', "Window opacity")));
++				const value = append(header, $('span'));
++				value.style.cssText = 'font-variant-numeric: tabular-nums; opacity: .8;';
++				const slider = append(root, $<HTMLInputElement>('input'));
++				slider.type = 'range'; slider.min = '50'; slider.max = '100'; slider.step = '1';
++				slider.setAttribute('aria-label', localize('windowOpacityLabel', "Window opacity"));
++				slider.style.cssText = 'width: 100%; accent-color: var(--vscode-focusBorder);';
++				slider.value = String(Math.round((configuration.getValue<number>(opacitySetting) ?? 0.96) * 100));
++				value.textContent = `${slider.value}%`;
++				// Dragging previews at most every 100 ms; releasing saves the final value.
++				let pending: ReturnType<typeof setTimeout> | undefined;
++				const save = () => { pending = undefined; configuration.updateValue(opacitySetting, Number(slider.value) / 100, ConfigurationTarget.USER); };
++				disposables.add(addDisposableListener(slider, 'input', () => { value.textContent = `${slider.value}%`; pending ??= setTimeout(save, 100); }));
++				disposables.add(addDisposableListener(slider, 'change', () => { if (pending) { clearTimeout(pending); } save(); }));
++				disposables.add(addDisposableListener(root, 'keydown', (e: KeyboardEvent) => { if (e.key === 'Escape' || e.key === 'Enter') { contextView.hideContextView(); } }));
++				disposables.add({ dispose: () => { if (pending) { clearTimeout(pending); save(); } } });
++				slider.focus();
++				return disposables;
++			},
++			onDOMEvent: (e: Event) => {
++				if ((e.type === 'mousedown' || e.type === 'pointerdown') && root && !isAncestor(e.target as HTMLElement, root)) {
++					contextView.hideContextView();
++				}
++			}
++		});
++	}
++});
+diff --git a/src/vs/workbench/browser/parts/titlebar/menubar.contribution.ts b/src/vs/workbench/browser/parts/titlebar/menubar.contribution.ts
+index 4794c30c..ef5a298c 100644
+--- a/src/vs/workbench/browser/parts/titlebar/menubar.contribution.ts
++++ b/src/vs/workbench/browser/parts/titlebar/menubar.contribution.ts
+@@ -6,6 +6,8 @@
+ import { localize } from '../../../../nls.js';
+ import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
+ import { IsMacNativeContext } from '../../../../platform/contextkey/common/contextkeys.js';
++// Furnace product patch: the Display menu.
++import './displayMenu.js';
+ 
+ MenuRegistry.appendMenuItem(MenuId.MenubarMainMenu, {
+ 	submenu: MenuId.MenubarFileMenu,

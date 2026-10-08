@@ -41,6 +41,17 @@ async function run(command, args, cwd = upstream) {
     });
 }
 
+// Product patches (patches/*.patch except release-*.patch, which only release builds apply).
+// Applied once; an already-applied patch is detected and skipped.
+async function applyProductPatches() {
+    const quiet = args => new Promise(resolve => spawn('git', args, { cwd: upstream, stdio: 'ignore' }).once('close', code => resolve(code === 0)));
+    for (const name of (await readdir(path.join(root, 'patches'))).filter(name => name.endsWith('.patch') && !name.startsWith('release-')).sort()) {
+        const file = path.join(root, 'patches', name);
+        if (await quiet(['apply', '--reverse', '--check', file])) continue;
+        await run('git', ['apply', file]);
+    }
+}
+
 for (const stage of stages) {
     console.log(`Setup stage: ${stage}`);
     if (stage === 'builtin-extensions') {
@@ -62,6 +73,7 @@ for (const stage of stages) {
             await run('npm', ['rebuild', name, '--foreground-scripts']);
         }
     } else if (stage === 'transpile') {
+        await applyProductPatches();
         await run('node', ['build/next/index.ts', 'transpile', '--exclude-tests']);
         const fontDir = path.join(upstream, 'out/vs/base/browser/ui/codicons/codicon');
         await mkdir(fontDir, { recursive: true });

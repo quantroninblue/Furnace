@@ -1,5 +1,5 @@
 import { expect } from '../../../node_modules/@playwright/test/index.mjs';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { desktopTest } from './desktop-test.mjs';
 const test = await desktopTest('product-smoke');
@@ -40,6 +40,21 @@ try {
     await expect(conversation.getByRole('img', { name: 'Furnace' })).toBeVisible();
     for (const text of [await test.page.title(), await test.page.locator('body').innerText(), await home.locator('body').innerText(), await conversation.locator('body').innerText()])
         expect(text).not.toMatch(/AI GUI/i);
+    // Display menu (patches/display-menu.patch): in the native menu bar after View; its
+    // Window Opacity slider writes aiGui.window.opacity.
+    const menus = () => test.app.evaluate(({ Menu }) => (Menu.getApplicationMenu()?.items || []).map(item => item.label.replace(/&/g, '')));
+    await expect.poll(menus).toContain('Display');
+    const labels = await menus();
+    expect(labels.indexOf('Display')).toBe(labels.indexOf('View') + 1);
+    await test.command('Display: Window Opacity');
+    const slider = test.page.getByRole('slider', { name: 'Window opacity' });
+    await expect(slider).toBeFocused();
+    await expect(slider).toHaveValue('96');
+    await test.page.keyboard.press('ArrowLeft');
+    const settingsFile = path.join(test.profile, 'user-data/User/settings.json');
+    await expect.poll(async () => JSON.parse(await readFile(settingsFile, 'utf8'))['aiGui.window.opacity']).toBe(0.95);
+    await test.page.keyboard.press('Escape');
+    await expect(slider).toHaveCount(0);
     await home.getByRole('button', { name: 'Skip tour', exact: true }).click();
     await expect(home.locator('#tour')).toBeHidden();
     // The Start page is Discuss mode; go back to Plan so the restart checks the saved mode.
