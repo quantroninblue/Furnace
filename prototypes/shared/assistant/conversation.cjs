@@ -18,6 +18,14 @@ const { HistoryMethods } = require('./conversation/history.cjs');
 const { SpendMethods } = require('./conversation/spend.cjs');
 const { ReviewMethods } = require('./conversation/review.cjs');
 const { SpendLedger } = require('./main/spend.ts');
+// Shown reasoning keeps its newest part, so long local-model thinking can't bloat the session.
+const REASONING_MAX = 60000;
+// Small models sometimes tick their whole checklist after only thinking about the work. A Build
+// reply that marks tasks completed but changed no file and ran no command is sent back once.
+const WORK_TOOLS = new Set(['run_command', 'verify_step']);
+const completedTodos = reply => (reply.steps || []).findLast(step => step.tool === 'todo_write' && step.status === 'done')?.todos?.filter(item => item.status === 'completed').length || 0;
+const unbacked = (reply, changes) => completedTodos(reply) > 0 && !changes.files.size && !(reply.steps || []).some(step => WORK_TOOLS.has(step.tool) && step.status === 'done');
+const doTheWork = count => `You marked ${count} task${count === 1 ? '' : 's'} completed, but nothing has been done yet: no file was created or changed and no command ran in this reply. Marking a task completed does not do the work, and the user sees only the files you write and the commands you run. Do the work now with your tools: create or edit the files (write_file, edit_file), then run a command that checks them (run_command or verify_step), and update the checklist as each step is really done. If this request truly needed no file changes or commands, say so in one sentence instead.`;
 // Session/tool lifecycle is independent of the IDE. The adapter supplies current
 // unsaved documents, file-review authority and scoped project access.
 class Conversation {
@@ -100,7 +108,11 @@ class Conversation {
     async send(text, { fromDraft = true } = {}) {
         if (this.busy()) throw new Error('Finish or stop the current task first.');
         if (typeof text !== 'string' || !text.trim() || text.length > 20000) throw new Error('Enter a message up to 20,000 characters.');
-        if (!this.connections.models.some(model => model.id === this.data.model)) throw new Error('Open Connections and select a model first.');
+        const model = this.connections.models.find(item => item.id === this.data.model);
+        if (!model) throw new Error('Open Connections and select a model first.');
+        const shortName = model.name.slice(model.name.indexOf(':') + 1).trim() || model.id;
+        if (this.images.length && model.vision === false) throw new Error(`${shortName} can't see images. Remove the image, or choose a model that supports images (for example a vision model such as qwen3-vl).`);
+        if (this.mode() !== 'discuss' && model.tools === false) throw new Error(`${shortName} doesn't support tool calling, which ${this.mode()} mode needs. Choose a model that does, or switch to Discuss.`);
         const epoch = this.epoch, controller = new AbortController(), turn = this.turn = { controller };
         this.changed();
         let context;
@@ -167,19 +179,29 @@ class Conversation {
                 controller.signal.throwIfAborted();
                 const messages = await this.prepareHistory(reply, context.text, controller.signal, epoch);
                 controller.signal.throwIfAborted();
-                await this.provider.run({ id: reply.id, model: this.data.model, mode, permission, environment: (this.adapter.environment?.() || '').slice(0, 1000), messages, context: context.text,
-                    ...(images.length ? { images: images.map(({ mime, data }) => ({ mime, data })) } : {}) }, guarded, controller.signal, event => {
+                const request = { id: reply.id, model: this.data.model, mode, permission, environment: (this.adapter.environment?.() || '').slice(0, 1000), messages, context: context.text };
+                const onEvent = event => {
                     if (epoch !== this.epoch || controller.signal.aborted) return;
                     if (event.delta) reply.content += event.delta;
+                    if (event.thinking) reply.reasoning = ((reply.reasoning || '') + event.thinking).slice(-REASONING_MAX);
                     if (event.activity && reply.activity.length < 16) reply.activity.push(event.activity);
                     if (event.usage) this.addUsage(reply, event.usage);
                     if (event.limits) this.noteLimits(reply.model, event.limits);
                     this.changed();
-                });
+                };
+                await this.provider.run({ ...request, ...(images.length ? { images: images.map(({ mime, data }) => ({ mime, data })) } : {}) }, guarded, controller.signal, onEvent);
+                if (mode === 'build' && unbacked(reply, changes) && !controller.signal.aborted && epoch === this.epoch) {
+                    reply.unbacked = 'retrying'; this.changed();
+                    const claim = reply.content.trim() || 'I marked the tasks completed.';
+                    if (reply.content) reply.content += '\n\n';
+                    await this.provider.run({ ...request, messages: [...messages, { id: randomUUID(), role: 'assistant', content: claim }, { id: randomUUID(), role: 'user', content: doTheWork(completedTodos(reply)) }] }, guarded, controller.signal, onEvent);
+                    reply.unbacked = unbacked(reply, changes) ? 'unresolved' : undefined;
+                }
                 reply.state = controller.signal.aborted ? 'stopped' : 'complete';
             } catch (error) { reply.state = controller.signal.aborted ? 'stopped' : 'failed'; reply.error = controller.signal.aborted ? 'Reply stopped.' : error.message; this.error = reply.error; if (/service disconnected|service timed out/.test(error.message)) this.connections = { models: [], connections: [], error: 'Assistant service stopped. Refresh Connections to reconnect.' }; }
             finally {
                 clearInterval(checkpoint); reply.endedAt = Date.now(); reply.phase = undefined;
+                if (reply.unbacked === 'retrying') reply.unbacked = undefined;
                 this.settleCost(reply);
                 const citations = this.citationsIn(reply.content); if (citations.length) reply.citations = citations;
                 await persistChanges();

@@ -2,7 +2,7 @@
 const { randomUUID } = require('node:crypto');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { definitionsSize, protectedPath } = require('../main/agent-tools.ts');
+const { definitionsSize, protectedPath, binaryFile } = require('../main/agent-tools.ts');
 const { agentInstructions, historyText } = require('../main/agent-context.ts');
 const { estimateTokens, replyReserve, CONDENSE_AT, KEEP_RECENT, COMPACT_MIN, summaryInstruction } = require('../main/context-window.ts');
 // Conversation context: what the next request contains, how full the model's window is,
@@ -112,8 +112,9 @@ class ContextMethods {
             let entry;
             if (kind === 'file') {
                 try {
-                    const content = await host.read(real), lines = content.split('\n').length, truncated = content.length > 40000;
-                    entry = { path: relative, kind: 'file', lines, truncated, text: `Mentioned file @${relative} (${lines} lines${truncated ? ', first 40,000 characters' : ''}):\n${content.slice(0, 40000)}` };
+                    const content = await host.read(real), lines = content.split('\n').length, truncated = content.length > 40000, binary = binaryFile(real, content);
+                    if (binary) entry = { path: relative, kind: 'skipped', error: `${binary}, not text`, text: `@${relative} was not shared: it is a ${binary}, not text. Paste images into the message box instead.` };
+                    else entry = { path: relative, kind: 'file', lines, truncated, text: `Mentioned file @${relative} (${lines} lines${truncated ? ', first 40,000 characters' : ''}):\n${content.slice(0, 40000)}` };
                 } catch (error) { entry = { path: relative, kind: 'file', error: error.message, text: `@${relative} could not be read: ${error.message}` }; }
             } else if (kind === 'directory') {
                 const listing = await listFolder(host, real, base);

@@ -32,7 +32,9 @@ class AssistantClient {
         this.turns.set(request.id, { tools, signal, emit });
         const abort = () => { void this.rpc.request('stop', { id: request.id }, 5000).catch(() => {}); };
         signal.addEventListener('abort', abort, { once: true });
-        try { await this.rpc.request('run', { request, definitions: tools.definitions }); }
+        // A turn has no fixed length (slow local models reason for many minutes); it fails only
+        // after 10 minutes without any sign of life. The service still caps a turn at 2 hours.
+        try { await this.rpc.request('run', { request, definitions: tools.definitions }, 10 * 60 * 1000, { idle: true }); }
         finally { signal.removeEventListener('abort', abort); this.turns.delete(request.id); }
     }
     async dispose() { this.rpc?.close(); await this.exited; }

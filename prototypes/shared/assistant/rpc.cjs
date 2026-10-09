@@ -8,7 +8,7 @@ class PrivateRPC extends EventEmitter {
         super(); this.pipe = pipe; this.handler = handler; this.pending = new Map(); this.inflight = 0;
         let buffer = Buffer.alloc(0);
         pipe.on('data', chunk => {
-            buffer = Buffer.concat([buffer, chunk]);
+            this.alive(); buffer = Buffer.concat([buffer, chunk]);
             let end;
             while ((end = buffer.indexOf(10)) >= 0) {
                 if (end > MAX) return this.close();
@@ -26,16 +26,23 @@ class PrivateRPC extends EventEmitter {
         this.pipe.write(data + '\n');
     }
     event(name, value) { this.send({ type: 'event', name, value }); }
-    request(name, value, timeout = 200000) {
+    // idle: the timeout restarts whenever the peer sends anything, and never fires while we are
+    // serving one of its requests (a tool waiting on approval), so long but live turns survive.
+    request(name, value, timeout = 200000, { idle = false } = {}) {
         if (this.pending.size >= 16) return Promise.reject(new Error('Too many assistant operations.'));
         const id = randomUUID();
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('Assistant service timed out.')); this.close(); }, timeout);
-            this.pending.set(id, { resolve, reject, timer });
+            const entry = { resolve, reject, idle };
+            entry.arm = () => { clearTimeout(entry.timer); entry.timer = setTimeout(() => {
+                if (idle && this.inflight > 0) return entry.arm();
+                this.pending.delete(id); reject(new Error('Assistant service timed out.')); this.close();
+            }, timeout); };
+            entry.arm(); this.pending.set(id, entry);
             try { this.send({ type: 'request', id, name, value }); }
-            catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
+            catch (error) { clearTimeout(entry.timer); this.pending.delete(id); reject(error); }
         });
     }
+    alive() { for (const item of this.pending.values()) if (item.idle) item.arm(); }
     receive(message) {
         if (!message || typeof message !== 'object') throw new Error('Invalid frame');
         if (message.type === 'event' && typeof message.name === 'string') { this.emit(message.name, message.value); return; }
@@ -50,7 +57,7 @@ class PrivateRPC extends EventEmitter {
         Promise.resolve().then(() => this.handler(message.name, message.value)).then(
             value => this.send({ type: 'result', id: message.id, value }),
             error => this.send({ type: 'result', id: message.id, error: String(error.message || 'Assistant operation failed').slice(0, 1000) })
-        ).catch(() => this.close()).finally(() => this.inflight--);
+        ).catch(() => this.close()).finally(() => { this.inflight--; this.alive(); });
     }
     close() {
         if (this.closed) return;
