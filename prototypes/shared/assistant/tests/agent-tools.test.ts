@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import path from "node:path";
 import os from "node:os";
-import { createAgentTools, toolNames, type ToolHost, type Permission, type Step } from "../main/agent-tools";
+import { binaryFile, createAgentTools, toolNames, type ToolHost, type Permission, type Step } from "../main/agent-tools";
 import { testContext } from "./tool-context";
 
 // Plain filesystem host standing in for the IDE adapter.
@@ -185,3 +185,19 @@ test("todo_write, plan and research proposals remain review artifacts", async ()
   await assert.rejects(research.execute("research_browse_propose", { url: "file:///etc/passwd", reason: "" }), /HTTP/);
   assert.deepEqual(proposals.map(item => (item as { kind: string }).kind), ["plan", "browse"]);
 });
+
+test("read_file names binary files instead of returning garbled text", () => project(async (root) => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  await fs.writeFile(path.join(root, "logo.png"), png);
+  await fs.writeFile(path.join(root, "data.bin"), Buffer.concat([Buffer.from("head"), Buffer.alloc(64)]));
+  const { tools, context } = build(root, "auto");
+  const image = await tools.execute("read_file", { path: "logo.png", offset: null, limit: null });
+  assert.match(image, /logo\.png is not a text file \(PNG image\)/);
+  assert.match(image, /paste it into the message box/);
+  assert.ok(!image.includes("PNG\r"), "no raw bytes");
+  assert.match(await tools.execute("read_file", { path: "data.bin", offset: null, limit: null }), /not a text file \(binary file\).*run_command/);
+  assert.equal(context.steps.at(-1)!.title, "Read data.bin (binary file, not text)");
+  assert.match(await tools.execute("read_file", { path: "src/app.ts", offset: null, limit: null }), /export const value = 1/);
+  assert.equal(binaryFile("notes.txt", "plain text\n"), null);
+  assert.equal(binaryFile("photo.JPG", ""), "JPEG image");
+}));

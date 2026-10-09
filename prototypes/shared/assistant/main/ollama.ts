@@ -15,6 +15,23 @@ export async function listModels(): Promise<string[]> {
   return (data.models ?? []).map((model) => model.name);
 }
 
+/** What a local model can do ("vision", "tools", "thinking" …), from Ollama's model details; null when unknown. */
+export async function capabilities(model: string): Promise<string[] | null> {
+  try {
+    const response = await fetch(`${OLLAMA_URL}/api/show`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model }),
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { capabilities?: unknown };
+    return Array.isArray(data.capabilities) ? data.capabilities.filter((item): item is string => typeof item === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
 type ToolCall = {
   function: { name: string; arguments: unknown; index?: number };
 };
@@ -65,10 +82,14 @@ export async function chat(
         ...(tools?.definitions.length ? { tools: tools.definitions } : {}),
       }),
     });
-    if (!response.ok || !response.body)
-      throw new Error(
-        `Ollama returned HTTP ${response.status}. Check the model and its tool-calling support.`,
-      );
+    if (!response.ok || !response.body) {
+      // Ollama explains a refusal (no image or tool support, unknown model) in the body.
+      const body = await response.text().catch(() => "");
+      let detail = body;
+      try { detail = String((JSON.parse(body) as { error?: unknown }).error ?? body); } catch { /* Plain text. */ }
+      detail = detail.trim().slice(0, 300);
+      throw new Error(`Ollama returned HTTP ${response.status}${detail ? `: ${detail}` : "."}`);
+    }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
