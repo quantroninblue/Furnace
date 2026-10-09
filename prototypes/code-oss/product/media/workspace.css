@@ -431,6 +431,8 @@ kbd { font: 11.5px var(--vscode-editor-font-family, monospace); padding: 1px 5px
 .reasoning { margin: 4px 0 10px; font-size: 12.5px; color: var(--muted); }
 .reasoning > summary { cursor: pointer; display: flex; align-items: center; gap: 6px; color: var(--accent); list-style: none; }
 .reasoning-text { margin-top: 6px; padding: 7px 10px; max-height: 14em; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid #c6c6c633; color: var(--soft); }
+.unbacked-note { margin: 6px 0 10px; padding: 7px 10px; border-left: 2px solid var(--accent); font-size: 12.5px; color: var(--muted); }
+.unbacked-note.warning { border-color: #d5b483; color: #d5b483; }
 .condensed-out { opacity: .62; }
 .message-actions { margin-left: auto; display: flex; gap: 1px; }
 .message-actions .message-action { margin-left: 0; }
