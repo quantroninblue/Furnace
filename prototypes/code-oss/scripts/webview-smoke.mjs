@@ -122,6 +122,15 @@ try {
     await expect(page.locator('#context-meter')).toHaveClass(/medium/);
     expect(await page.locator('#context-meter').getAttribute('title')).toContain('about 130k of 200k tokens');
     checks.push('approval offers a saved project rule; condensed-summary note dims older messages; mention/image chips; context meter shows usage');
+    // A reply that ticked its checklist without doing anything carries a warning; its reasoning is collapsed.
+    const lazy = { id: 'a3', role: 'assistant', model: 'openai/gpt-fixture', state: 'complete', content: 'All steps completed.', unbacked: 'unresolved', reasoning: 'Planning the parser in my head.',
+        steps: [step('t3', 'todo_write', 'Tasks 2/2 done', { todos: [{ content: 'Parser', status: 'completed' }, { content: 'UI', status: 'completed' }] })] };
+    await send(page, state({ messages: { reset: false, order: [...messages.map(m => m.id), 'a3'], upsert: [lazy] } }));
+    await expect(page.locator('#message-a3 .unbacked-note.warning')).toContainText('changed no files and ran no commands');
+    await expect(page.locator('#message-a3 details.reasoning > summary')).toHaveText(/Reasoning$/);
+    expect(await page.locator('#message-a3 details.reasoning').evaluate(node => node.open)).toBe(false);
+    await send(page, state({ messages: { reset: false, order: messages.map(m => m.id), upsert: [] } }));
+    checks.push('a reply that ticked tasks without changing files shows a warning; finished reasoning is collapsed');
     // Incremental update: only the live reply is sent; the other rows keep their DOM nodes.
     await page.evaluate(() => { document.querySelectorAll('.message')[1].dataset.mark = 'kept'; });
     const updated = { ...messages[5], content: 'Deleting it **now**.', steps: [{ ...messages[5].steps[0], status: 'done' }] };

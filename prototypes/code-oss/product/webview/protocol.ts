@@ -33,6 +33,9 @@ export type ChatMessage = {
   usage?: TokenUsage; phase?: "condensing"; contextNote?: string;
   /** The model's reasoning (newest part, bounded), shown live and collapsed afterwards. */
   reasoning?: string;
+  /** Build reply that marked tasks completed without changing a file or running a command:
+   * retrying while the model is sent back to do the work, unresolved when it still did nothing. */
+  unbacked?: "retrying" | "unresolved";
   /** Dollar cost of an API-key reply (provider prices, estimated). */
   cost?: number; review?: Review; citations?: Citation[]; untrusted?: string[]; createdAt?: number;
 };

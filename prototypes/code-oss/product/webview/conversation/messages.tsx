@@ -91,6 +91,8 @@ const Message = memo(function Message({ message, models, busy, latest, condensed
         {message.cwd && user && <small className="muted">{message.cwd}</small>}
         {!user && message.reasoning ? <Reasoning text={message.reasoning} thinking={live && !message.content} /> : null}
         {message.steps?.length ? <Steps steps={message.steps} finished={!live} startedAt={message.startedAt} endedAt={message.endedAt} /> : null}
+        {message.unbacked === "retrying" && <p className="unbacked-note" role="status">Tasks were marked done, but no file changed and no command ran. Asked the model to do the work.</p>}
+        {message.unbacked === "unresolved" && <p className="unbacked-note warning" role="alert">⚠ Tasks were marked done, but this reply changed no files and ran no commands. Check the project before trusting it.</p>}
         {message.content || !message.state
           ? command ? <pre className="command-output">{message.content}</pre> : user ? <div className="message-text">{message.content}</div> : <MarkdownText text={withCitations(message)} />
           : message.state === "streaming" && !waiting && !message.reasoning ? <span className="muted">…</span> : null}

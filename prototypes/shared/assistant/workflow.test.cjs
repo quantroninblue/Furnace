@@ -306,3 +306,38 @@ test('the timeline lists turns with changes and branches; compare and review use
     assert.deepEqual(steps.map(step => [step.done, step.evidence?.status, step.evidence?.by]), [[true, 'passed', 'you'], [true, 'passed', 'you'], [false, 'failed', 'you']]);
     assert.match(chat.session.state.brief, /- \[x\] Has three/);
 });
+
+test('a Build reply that ticks its checklist without doing anything is sent back once, then flagged', async t => {
+    const { root, host } = await project(t);
+    const todos = [{ content: 'Create app.js', status: 'completed' }, { content: 'Test it', status: 'completed' }];
+    const requests = [];
+    let behaviour = 'lazy-then-work';
+    const chat = await fixture(t, async (request, tools, _signal, emit) => {
+        requests.push(request);
+        const sentBack = /nothing has been done yet/.test(request.messages.at(-1).content);
+        if (behaviour === 'works' || (behaviour === 'lazy-then-work' && sentBack)) await tools.execute('write_file', { path: 'app.js', content: 'console.log(1);\n' });
+        await tools.execute('todo_write', { todos });
+        emit({ delta: 'All steps completed.' });
+    }, { root: () => root, toolHost: () => host, permission: () => 'full', trusted: () => true });
+    chat.session.update('mode', 'Build');
+
+    await chat.send('build the app');
+    assert.equal(requests.length, 2, 'sent back once');
+    assert.equal(requests[1].messages.at(-2).content, 'All steps completed.');
+    assert.match(requests[1].messages.at(-1).content, /You marked 2 tasks completed/);
+    let reply = chat.data.messages.at(-1);
+    assert.equal(reply.unbacked, undefined);
+    assert.equal(await fs.readFile(path.join(root, 'app.js'), 'utf8'), 'console.log(1);\n');
+    assert.deepEqual(reply.changes.files.map(file => file.path), ['app.js']);
+
+    behaviour = 'lazy'; requests.length = 0;
+    await chat.send('build more');
+    assert.equal(requests.length, 2, 'only one retry');
+    reply = chat.data.messages.at(-1);
+    assert.equal(reply.unbacked, 'unresolved'); assert.equal(reply.state, 'complete');
+
+    behaviour = 'works'; requests.length = 0;
+    await chat.send('build again');
+    assert.equal(requests.length, 1, 'real work is not sent back');
+    assert.equal(chat.data.messages.at(-1).unbacked, undefined);
+});

@@ -270,6 +270,11 @@ Replies are formatted (headings, lists, tables, highlighted code). Code blocks h
 (Undo reverses it). Finished work collapses into one line such as *Worked for 1m 05s ·
 15 steps*; click it to see each step. Replies never load remote images or run HTML.
 
+When a model shares its reasoning (local Ollama models do), a **Reasoning** block shows it as
+it thinks and collapses once the answer starts. If a Build reply marks its tasks done without
+changing a file or running a command, Furnace sends the model back once to do the work, and
+warns you on the reply if it still didn't.
+
 ## Research
 
 Switch to **Research**, type a website or a search, and choose **Open Research
