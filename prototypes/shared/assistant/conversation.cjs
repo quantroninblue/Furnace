@@ -18,6 +18,8 @@ const { HistoryMethods } = require('./conversation/history.cjs');
 const { SpendMethods } = require('./conversation/spend.cjs');
 const { ReviewMethods } = require('./conversation/review.cjs');
 const { SpendLedger } = require('./main/spend.ts');
+// Shown reasoning keeps its newest part, so long local-model thinking can't bloat the session.
+const REASONING_MAX = 60000;
 // Session/tool lifecycle is independent of the IDE. The adapter supplies current
 // unsaved documents, file-review authority and scoped project access.
 class Conversation {
@@ -171,6 +173,7 @@ class Conversation {
                     ...(images.length ? { images: images.map(({ mime, data }) => ({ mime, data })) } : {}) }, guarded, controller.signal, event => {
                     if (epoch !== this.epoch || controller.signal.aborted) return;
                     if (event.delta) reply.content += event.delta;
+                    if (event.thinking) reply.reasoning = ((reply.reasoning || '') + event.thinking).slice(-REASONING_MAX);
                     if (event.activity && reply.activity.length < 16) reply.activity.push(event.activity);
                     if (event.usage) this.addUsage(reply, event.usage);
                     if (event.limits) this.noteLimits(reply.model, event.limits);

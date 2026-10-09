@@ -31,6 +31,8 @@ export type ChatMessage = {
   condensed?: number; failed?: boolean;
   mentions?: Mention[]; images?: ImageInfo[];
   usage?: TokenUsage; phase?: "condensing"; contextNote?: string;
+  /** The model's reasoning (newest part, bounded), shown live and collapsed afterwards. */
+  reasoning?: string;
   /** Dollar cost of an API-key reply (provider prices, estimated). */
   cost?: number; review?: Review; citations?: Citation[]; untrusted?: string[]; createdAt?: number;
 };

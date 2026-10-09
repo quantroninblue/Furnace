@@ -102,6 +102,7 @@ export async function chat(
         thinking += message.thinking;
         if (thinking.length > 256000)
           throw new Error("Model reasoning exceeded the turn limit.");
+        emit({ id: request.id, thinking: message.thinking });
       }
       for (const call of message?.tool_calls ?? []) {
         if (!call.function || typeof call.function.name !== "string")

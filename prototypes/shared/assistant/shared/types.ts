@@ -67,6 +67,8 @@ export type Session = Omit<SessionSummary, "messageCount" | "snippet"> & { messa
 export type ChatEvent = {
   id: string;
   delta?: string;
+  /** Model reasoning text, shown while the model thinks; never sent back as history. */
+  thinking?: string;
   done?: boolean;
   error?: string;
   exitCode?: number | null;

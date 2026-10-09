@@ -50,6 +50,20 @@ test("local chat decodes split streaming chunks and sends history without tools"
   }
 });
 
+test("local reasoning streams as thinking events, separate from the reply", async () => {
+  const body = '{"message":{"thinking":"Let me "}}\n{"message":{"thinking":"check."}}\n{"message":{"content":"Done."}}\n{"done":true}\n';
+  const fetchMock = mock.method(globalThis, "fetch", async () => new Response(body));
+  try {
+    const events: ChatEvent[] = [];
+    await chat({ id: "reply-2", model: "qwen3", messages: [{ id: "q", role: "user", content: "Hi" }], context: "" },
+      new AbortController().signal, (event) => events.push(event));
+    assert.equal(events.map((event) => event.thinking ?? "").join(""), "Let me check.");
+    assert.equal(events.map((event) => event.delta ?? "").join(""), "Done.");
+  } finally {
+    fetchMock.mock.restore();
+  }
+});
+
 test("local server failures surface rather than becoming empty replies", async () => {
   const fetchMock = mock.method(
     globalThis,
