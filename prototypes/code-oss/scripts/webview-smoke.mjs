@@ -225,6 +225,15 @@ try {
     await send(page, state({ chat: idle, status: 'Earlier messages condensed into a summary.' }));
     await expect(page.locator('#status')).toHaveText('Earlier messages condensed into a summary.');
     checks.push('rejected paste note shows over older status');
+    // A model known not to see images: the image is still attached, with a note to switch models.
+    await send(page, state({ chat: { ...idle, connections: { ...idle.connections, models: [{ id: 'openai/gpt-fixture', name: 'openai: gpt-fixture', vision: false }] } } }));
+    await draft.evaluate(element => {
+        const data = new DataTransfer(); data.items.add(new File([new Uint8Array(64)], 'small.png', { type: 'image/png' }));
+        element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await expect(page.locator('#status')).toHaveText("openai: gpt-fixture can't see images. Choose a model that supports images before sending.");
+    expect(await posted(page, 'pasteImage')).toHaveLength(1);
+    checks.push('pasting an image for a model without vision warns');
     await send(page, state({ chat: idle }));
     // History pane: search, rename, delete, open.
     await page.getByRole('button', { name: 'Chat History' }).click();

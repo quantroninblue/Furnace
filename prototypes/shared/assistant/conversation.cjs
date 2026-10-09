@@ -108,7 +108,11 @@ class Conversation {
     async send(text, { fromDraft = true } = {}) {
         if (this.busy()) throw new Error('Finish or stop the current task first.');
         if (typeof text !== 'string' || !text.trim() || text.length > 20000) throw new Error('Enter a message up to 20,000 characters.');
-        if (!this.connections.models.some(model => model.id === this.data.model)) throw new Error('Open Connections and select a model first.');
+        const model = this.connections.models.find(item => item.id === this.data.model);
+        if (!model) throw new Error('Open Connections and select a model first.');
+        const shortName = model.name.slice(model.name.indexOf(':') + 1).trim() || model.id;
+        if (this.images.length && model.vision === false) throw new Error(`${shortName} can't see images. Remove the image, or choose a model that supports images (for example a vision model such as qwen3-vl).`);
+        if (this.mode() !== 'discuss' && model.tools === false) throw new Error(`${shortName} doesn't support tool calling, which ${this.mode()} mode needs. Choose a model that does, or switch to Discuss.`);
         const epoch = this.epoch, controller = new AbortController(), turn = this.turn = { controller };
         this.changed();
         let context;

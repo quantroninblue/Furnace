@@ -166,6 +166,8 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
     const images = [...event.clipboardData.files].filter(file => file.type.startsWith("image/"));
     if (!images.length) return;
     event.preventDefault();
+    const active = (chat.connections.models || []).find(model => model.id === chat.model);
+    if (active?.vision === false) setNote(`${active.name} can't see images. Choose a model that supports images before sending.`);
     for (const file of images.slice(0, 4)) {
       if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) { setNote("Paste PNG, JPEG, GIF or WebP images up to 5 MB."); continue; }
       post({ type: "pasteImage", name: file.name && file.name !== "image.png" ? file.name : `pasted-${new Date().toLocaleTimeString().replace(/\W/g, "")}.${file.type.split("/")[1]}`, mime: file.type, data: await readImage(file) });

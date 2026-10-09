@@ -141,6 +141,18 @@ export const toolNames = (mode: AgentMode) => [...scopes[mode]];
 /** Characters the mode's tool definitions add to every request (for context estimates). */
 export const definitionsSize = (mode: AgentMode) => JSON.stringify(scopes[mode].map(name => specs[name])).length;
 
+const BINARY_KINDS: Record<string, string> = { png: "PNG image", jpg: "JPEG image", jpeg: "JPEG image", gif: "GIF image", webp: "WebP image", bmp: "BMP image", ico: "icon image",
+  pdf: "PDF document", zip: "ZIP archive", gz: "gzip archive", tgz: "gzip archive", tar: "tar archive", "7z": "7-Zip archive", woff: "font", woff2: "font", ttf: "font", otf: "font",
+  mp3: "audio file", wav: "audio file", ogg: "audio file", mp4: "video", webm: "video", mov: "video", exe: "program", dll: "library", so: "library", wasm: "WebAssembly module", sqlite: "database", db: "database" };
+/** What kind of non-text file this is (by extension, NUL bytes or mostly undecodable bytes); null for text. */
+export function binaryFile(file: string, text: string): string | null {
+  const known = BINARY_KINDS[path.extname(file).slice(1).toLowerCase()];
+  if (known) return known;
+  const sample = text.slice(0, 8000);
+  if (sample.includes("\u0000")) return "binary file";
+  return sample.length && (sample.split("\uFFFD").length - 1) / sample.length > 0.1 ? "binary file" : null;
+}
+
 // Secret material and VCS internals always need explicit approval outside Full access.
 export function protectedPath(file: string) {
   return file.split(/[\\/]/).some(segment =>
@@ -322,6 +334,13 @@ export function createAgentTools(
       return step("read_file", `Read ${place.display}`, async current => {
         await gate(current, readKind(place));
         const text = await host!.read(place.file); readFiles.add(place.file);
+        const binary = binaryFile(place.file, text);
+        if (binary) {
+          current.title = `Read ${place.display} (${binary}, not text)`;
+          return `${place.display} is not a text file (${binary}), so read_file cannot show it. ${/image/.test(binary)
+            ? "Tools cannot show you images. If you need to see it, ask the user to paste it into the message box, with a model that supports images."
+            : "If you need details, use run_command with a suitable tool (for example file, unzip -l or pdftotext)."}`;
+        }
         if (!place.inside) context.untrusted?.add(`file outside the project (${place.display})`);
         const lines = text.split("\n"); if (text.endsWith("\n")) lines.pop();
         const first = Math.max(1, Number(offset) || 1), count = Math.min(Math.max(1, Number(limit) || 2000), 5000);

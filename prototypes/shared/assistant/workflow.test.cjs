@@ -341,3 +341,24 @@ test('a Build reply that ticks its checklist without doing anything is sent back
     assert.equal(requests.length, 1, 'real work is not sent back');
     assert.equal(chat.data.messages.at(-1).unbacked, undefined);
 });
+
+test('models that cannot see images or call tools are refused before sending; binary @mentions are not shared', async t => {
+    const { root, host } = await project(t);
+    await fs.writeFile(path.join(root, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]));
+    const requests = [];
+    const chat = await fixture(t, async (request, _tools, _signal, emit) => { requests.push(request); emit({ delta: 'ok' }); },
+        { root: () => root, toolHost: () => host, permission: () => 'full', trusted: () => true });
+    chat.connections.models.push({ id: 'ollama/text', name: 'ollama: qwen3:8b', vision: false, tools: true }, { id: 'ollama/chatty', name: 'ollama: tiny', vision: true, tools: false });
+    chat.selectModel('ollama/text');
+    chat.addImage({ name: 'shot.png', mime: 'image/png', data: 'iVBORw0KGgo=' });
+    await assert.rejects(chat.send('what is this?'), /qwen3:8b can't see images/);
+    assert.equal(chat.snapshot().images.length, 1, 'the image stays for another model');
+    assert.equal(requests.length, 0);
+    chat.selectModel('ollama/chatty'); chat.session.update('mode', 'Build');
+    await assert.rejects(chat.send('build it'), /tiny doesn't support tool calling, which build mode needs/);
+    chat.session.update('mode', 'Discuss');
+    await chat.send('look at @logo.png');
+    assert.equal(requests.length, 1);
+    assert.deepEqual(chat.data.messages.at(-2).mentions.map(item => [item.kind, item.error]), [['skipped', 'PNG image, not text']]);
+    assert.ok(!JSON.stringify(requests[0]).includes('\\u0000'));
+});

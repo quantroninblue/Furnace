@@ -63,7 +63,8 @@ export type HistoryItem = { id: string; title: string; updatedAt: string; messag
 export type AuditEntry = { time: string; event: string; tool?: string; title: string; status?: string; decision?: string; permission?: string; detail?: string };
 export type PathItem = { path: string; kind: "file" | "folder" };
 export type Page = "start" | "plan" | "build" | "research" | "rules" | "activity" | "connections";
-export type Model = { id: string; name: string };
+/** vision/tools: what the model accepts, when known (local models). */
+export type Model = { id: string; name: string; vision?: boolean; tools?: boolean };
 export type Connection = { provider: string; connected?: boolean; installed?: boolean; account?: string; error?: string };
 export type Connections = {
   models: Model[]; connections: Connection[]; secureStorage?: boolean; error?: string;
