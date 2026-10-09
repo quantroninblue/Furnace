@@ -29,7 +29,19 @@ function liveState(message: ChatMessage) {
   const steps = message.steps || [];
   if (steps.some(step => step.status === "waiting")) return "WAITING FOR YOU";
   if (steps.some(step => step.status === "running")) return "WORKING";
-  return message.content ? "WRITING" : "THINKING";
+  return message.content ? "WRITING" : message.reasoning ? "REASONING" : "THINKING";
+}
+
+// The model's reasoning: open and following the newest text until the answer starts, then collapsed.
+function Reasoning({ text, thinking }: { text: string; thinking: boolean }) {
+  const body = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { if (thinking && body.current) body.current.scrollTop = body.current.scrollHeight; }, [text, thinking]);
+  return (
+    <details className="reasoning" open={thinking}>
+      <summary><Icon name="layers" size={12} /> {thinking ? "Reasoning…" : "Reasoning"}</summary>
+      <div className="reasoning-text" ref={body}>{text}</div>
+    </details>
+  );
 }
 
 // Where older messages were condensed: above it the model sees only this summary.
@@ -77,10 +89,11 @@ const Message = memo(function Message({ message, models, busy, latest, condensed
       </div>
       <div className="message-body">
         {message.cwd && user && <small className="muted">{message.cwd}</small>}
+        {!user && message.reasoning ? <Reasoning text={message.reasoning} thinking={live && !message.content} /> : null}
         {message.steps?.length ? <Steps steps={message.steps} finished={!live} startedAt={message.startedAt} endedAt={message.endedAt} /> : null}
         {message.content || !message.state
           ? command ? <pre className="command-output">{message.content}</pre> : user ? <div className="message-text">{message.content}</div> : <MarkdownText text={withCitations(message)} />
-          : message.state === "streaming" && !waiting ? <span className="muted">…</span> : null}
+          : message.state === "streaming" && !waiting && !message.reasoning ? <span className="muted">…</span> : null}
         {(message.mentions?.length || message.images?.length) ? <div className="message-attachments">
           {message.mentions?.map(item => <span key={item.path} className={`attachment-chip ${item.kind}`} title={item.error || (item.kind === "file" ? `${item.lines} lines shared${item.truncated ? " (first 40,000 characters)" : ""}` : item.kind === "folder" ? `${item.entries} entries listed` : "Not shared")}>
             <Icon name={item.kind === "folder" ? "folder" : "file"} size={11} />@{item.path}{item.kind === "blocked" || item.kind === "skipped" ? " · not shared" : ""}</span>)}
