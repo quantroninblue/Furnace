@@ -122,6 +122,15 @@ try {
     await expect(page.locator('#context-meter')).toHaveClass(/medium/);
     expect(await page.locator('#context-meter').getAttribute('title')).toContain('about 130k of 200k tokens');
     checks.push('approval offers a saved project rule; condensed-summary note dims older messages; mention/image chips; context meter shows usage');
+    // A reply that ticked its checklist without doing anything carries a warning; its reasoning is collapsed.
+    const lazy = { id: 'a3', role: 'assistant', model: 'openai/gpt-fixture', state: 'complete', content: 'All steps completed.', unbacked: 'unresolved', reasoning: 'Planning the parser in my head.',
+        steps: [step('t3', 'todo_write', 'Tasks 2/2 done', { todos: [{ content: 'Parser', status: 'completed' }, { content: 'UI', status: 'completed' }] })] };
+    await send(page, state({ messages: { reset: false, order: [...messages.map(m => m.id), 'a3'], upsert: [lazy] } }));
+    await expect(page.locator('#message-a3 .unbacked-note.warning')).toContainText('changed no files and ran no commands');
+    await expect(page.locator('#message-a3 details.reasoning > summary')).toHaveText(/Reasoning$/);
+    expect(await page.locator('#message-a3 details.reasoning').evaluate(node => node.open)).toBe(false);
+    await send(page, state({ messages: { reset: false, order: messages.map(m => m.id), upsert: [] } }));
+    checks.push('a reply that ticked tasks without changing files shows a warning; finished reasoning is collapsed');
     // Incremental update: only the live reply is sent; the other rows keep their DOM nodes.
     await page.evaluate(() => { document.querySelectorAll('.message')[1].dataset.mark = 'kept'; });
     const updated = { ...messages[5], content: 'Deleting it **now**.', steps: [{ ...messages[5].steps[0], status: 'done' }] };
@@ -216,6 +225,15 @@ try {
     await send(page, state({ chat: idle, status: 'Earlier messages condensed into a summary.' }));
     await expect(page.locator('#status')).toHaveText('Earlier messages condensed into a summary.');
     checks.push('rejected paste note shows over older status');
+    // A model known not to see images: the image is still attached, with a note to switch models.
+    await send(page, state({ chat: { ...idle, connections: { ...idle.connections, models: [{ id: 'openai/gpt-fixture', name: 'openai: gpt-fixture', vision: false }] } } }));
+    await draft.evaluate(element => {
+        const data = new DataTransfer(); data.items.add(new File([new Uint8Array(64)], 'small.png', { type: 'image/png' }));
+        element.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await expect(page.locator('#status')).toHaveText("openai: gpt-fixture can't see images. Choose a model that supports images before sending.");
+    expect(await posted(page, 'pasteImage')).toHaveLength(1);
+    checks.push('pasting an image for a model without vision warns');
     await send(page, state({ chat: idle }));
     // History pane: search, rename, delete, open.
     await page.getByRole('button', { name: 'Chat History' }).click();

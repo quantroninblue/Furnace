@@ -75,9 +75,9 @@ export function tickBrief(brief: string, todos: Todo[]) {
 
 export function buildFromPlanPrompt(brief: string) {
   const open = briefSteps(brief).filter(step => !step.done);
-  if (!open.length) return "Implement the shared planning brief. It has no unchecked checklist items, so first break the work into steps with todo_write, then work through them, marking each completed as you finish it.";
+  if (!open.length) return "Implement the shared planning brief. It has no unchecked checklist items, so first break the work into concrete steps with todo_write. Then do each step with your tools: create or edit the files (write_file, edit_file) and run a command that checks them (run_command). Mark a step completed only after its files exist and its check ran; updating the checklist does not do the work.";
   const checked = open.filter(step => step.check);
   return `Implement the shared planning brief step by step. Start by calling todo_write with these ${open.length} unchecked steps from the brief, using their exact wording:\n${open.map(step => `- ${step.text}${step.check ? ` (check: ${checkText(step.check)})` : ""}`).join("\n")}\nWork through them in order and keep exactly one in_progress.${checked.length
     ? ` A step is done only when it is proven: after implementing a step that has a check, call verify_step with its text. verify_step runs the check and ticks the step in the brief only if it passes; if it fails, fix the cause and verify again. For a manual check it asks the user to confirm.`
-    : ""} For a step without a check, call verify_step with a command that proves it (a test, build or script) when one exists; otherwise mark it completed with todo_write once it is done and verified.`;
+    : ""} For a step without a check, call verify_step with a command that proves it (a test, build or script) when one exists; otherwise mark it completed with todo_write once it is done and verified. Updating the checklist does not do the work: make every change with the file tools and commands.`;
 }

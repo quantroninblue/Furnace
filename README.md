@@ -270,6 +270,11 @@ Replies are formatted (headings, lists, tables, highlighted code). Code blocks h
 (Undo reverses it). Finished work collapses into one line such as *Worked for 1m 05s ·
 15 steps*; click it to see each step. Replies never load remote images or run HTML.
 
+When a model shares its reasoning (local Ollama models do), a **Reasoning** block shows it as
+it thinks and collapses once the answer starts. If a Build reply marks its tasks done without
+changing a file or running a command, Furnace sends the model back once to do the work, and
+warns you on the reply if it still didn't.
+
 ## Research
 
 Switch to **Research**, type a website or a search, and choose **Open Research
@@ -383,7 +388,8 @@ Type `/` in the message box for the command list:
 | "no sandbox" next to the project name | Furnace couldn't build or start its sandbox (on Linux it needs a C compiler and a recent kernel). In Auto mode, commands will ask for approval instead. |
 | Claude sign-in finished but nothing changed | Open Connections and choose **Refresh Connections**. |
 | "Remember securely" is greyed out | Your system has no unlocked keychain; keys last for the current session only. |
-| An Ollama model never uses tools | The model doesn't support tool calling; choose one that does. |
+| "… doesn't support tool calling" | That local model can't use tools, which Plan, Build and Research need. Choose one that does (for example Qwen or Llama 3.1+), or use Discuss. |
+| "… can't see images" | That model is text-only. Choose a vision model (for example `qwen3-vl`) for screenshots. The agent can't open image files from the project; paste them into the message box instead. |
 | Send is disabled | Pick a model in the message box, or open Connections. |
 | "Background tasks need the project to be a Git repository" | Run `git init` and make a first commit, or use the normal conversation. |
 | A local model forgets earlier messages | Ollama requests use a 16k-token context window; long chats are condensed. Pick a model with a larger context for long tasks. |

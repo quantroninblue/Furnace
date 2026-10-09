@@ -1,6 +1,6 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { chat, listModels } from "../main/ollama";
+import { capabilities, chat, listModels } from "../main/ollama";
 import type { ChatEvent } from "../shared/types";
 import { createAgentTools } from "../main/agent-tools";
 import { testContext } from "./tool-context";
@@ -45,6 +45,20 @@ test("local chat decodes split streaming chunks and sends history without tools"
     assert.equal(sent.messages[1].content, "Discuss a design");
     assert.match(sent.messages[2].content, /Selected passage/);
     assert.ok(events.every((event) => event.id === "reply-1"));
+  } finally {
+    fetchMock.mock.restore();
+  }
+});
+
+test("local reasoning streams as thinking events, separate from the reply", async () => {
+  const body = '{"message":{"thinking":"Let me "}}\n{"message":{"thinking":"check."}}\n{"message":{"content":"Done."}}\n{"done":true}\n';
+  const fetchMock = mock.method(globalThis, "fetch", async () => new Response(body));
+  try {
+    const events: ChatEvent[] = [];
+    await chat({ id: "reply-2", model: "qwen3", messages: [{ id: "q", role: "user", content: "Hi" }], context: "" },
+      new AbortController().signal, (event) => events.push(event));
+    assert.equal(events.map((event) => event.thinking ?? "").join(""), "Let me check.");
+    assert.equal(events.map((event) => event.delta ?? "").join(""), "Done.");
   } finally {
     fetchMock.mock.restore();
   }
@@ -98,4 +112,26 @@ test("agent loop feeds scoped tool results back into the model", async () => {
     assert.ok(events.some(event => event.activity === "plan_read"));
     assert.ok(events.some(event => event.delta === "I read the shared brief."));
   } finally { fetchMock.mock.restore(); }
+});
+
+test("Ollama refusals keep their reason, and model capabilities are read from /api/show", async () => {
+  const fetchMock = mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    if (String(url).endsWith("/api/show")) {
+      const model = JSON.parse(String(options.body)).model;
+      return model === "missing" ? new Response("not found", { status: 404 }) : Response.json({ capabilities: model === "qwen3-vl" ? ["completion", "vision", "tools"] : ["completion", "tools"] });
+    }
+    return new Response('{"error":"registry.ollama.ai/library/qwen3:8b does not support images"}', { status: 400 });
+  });
+  try {
+    await assert.rejects(
+      chat({ id: "r", model: "qwen3:8b", messages: [{ id: "q", role: "user", content: "see" }], context: "", images: [{ mime: "image/png", data: "iVBORw0KGgo=" }] },
+        new AbortController().signal, () => {}),
+      /^Error: Ollama returned HTTP 400: registry\.ollama\.ai\/library\/qwen3:8b does not support images$/,
+    );
+    assert.deepEqual(await capabilities("qwen3-vl"), ["completion", "vision", "tools"]);
+    assert.deepEqual(await capabilities("qwen3:8b"), ["completion", "tools"]);
+    assert.equal(await capabilities("missing"), null);
+  } finally {
+    fetchMock.mock.restore();
+  }
 });

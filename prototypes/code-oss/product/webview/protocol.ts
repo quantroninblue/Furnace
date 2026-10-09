@@ -31,6 +31,11 @@ export type ChatMessage = {
   condensed?: number; failed?: boolean;
   mentions?: Mention[]; images?: ImageInfo[];
   usage?: TokenUsage; phase?: "condensing"; contextNote?: string;
+  /** The model's reasoning (newest part, bounded), shown live and collapsed afterwards. */
+  reasoning?: string;
+  /** Build reply that marked tasks completed without changing a file or running a command:
+   * retrying while the model is sent back to do the work, unresolved when it still did nothing. */
+  unbacked?: "retrying" | "unresolved";
   /** Dollar cost of an API-key reply (provider prices, estimated). */
   cost?: number; review?: Review; citations?: Citation[]; untrusted?: string[]; createdAt?: number;
 };
@@ -58,7 +63,8 @@ export type HistoryItem = { id: string; title: string; updatedAt: string; messag
 export type AuditEntry = { time: string; event: string; tool?: string; title: string; status?: string; decision?: string; permission?: string; detail?: string };
 export type PathItem = { path: string; kind: "file" | "folder" };
 export type Page = "start" | "plan" | "build" | "research" | "rules" | "activity" | "connections";
-export type Model = { id: string; name: string };
+/** vision/tools: what the model accepts, when known (local models). */
+export type Model = { id: string; name: string; vision?: boolean; tools?: boolean };
 export type Connection = { provider: string; connected?: boolean; installed?: boolean; account?: string; error?: string };
 export type Connections = {
   models: Model[]; connections: Connection[]; secureStorage?: boolean; error?: string;

@@ -20,13 +20,19 @@ class ProviderService {
         admin: { openai: !!this.keys.get('openai-admin'), anthropic: !!this.keys.get('anthropic-admin') } }; }
     async discover() {
         this.catalog.clear(); this.connections = [];
-        const add = (provider, models) => { for (const model of models) this.catalog.set(`${provider}/${model.id}`, { id: `${provider}/${model.id}`, name: `${provider}: ${model.name}` }); };
+        const add = (provider, models) => { for (const model of models) this.catalog.set(`${provider}/${model.id}`, { id: `${provider}/${model.id}`, name: `${provider}: ${model.name}`,
+            ...(typeof model.vision === 'boolean' ? { vision: model.vision } : {}), ...(typeof model.tools === 'boolean' ? { tools: model.tools } : {}) }); };
         for (const provider of ['openai', 'anthropic']) {
             const key = this.keys.get(provider);
             try { if (key) add(provider, await this.remote.remoteModels(provider, key.key)); this.connections.push({ provider, connected: !!key, storage: key?.storage || 'none' }); }
             catch (error) { this.connections.push({ provider, connected: false, error: error.message }); }
         }
-        try { add('ollama', (await this.ollama.listModels()).map(id => ({ id, name: id }))); this.connections.push({ provider: 'ollama', connected: true }); }
+        try {
+            // Local models differ in what they accept, so Furnace can say so before Ollama refuses.
+            const names = await this.ollama.listModels(), known = await Promise.all(names.map(id => this.ollama.capabilities?.(id) ?? null));
+            add('ollama', names.map((id, index) => ({ id, name: id, ...(known[index] ? { vision: known[index].includes('vision'), tools: known[index].includes('tools') } : {}) })));
+            this.connections.push({ provider: 'ollama', connected: true });
+        }
         catch { this.connections.push({ provider: 'ollama', connected: false, error: 'Start Ollama separately, then refresh. No model is downloaded automatically.' }); }
         const account = this.auth.status().accounts.find(a => a.id === this.auth.status().activeId);
         try { if (account?.signedIn) add('chatgpt', await this.remote.chatgptModels(await this.auth.accessToken())); }
