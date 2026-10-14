@@ -399,5 +399,5 @@ Type `/` in the message box for the command list:
 
 ## License and notices
 
-Furnace is private software in preview. Code OSS and other third-party components
-keep their own licenses and notices.
+Furnace is released under the [MIT License](LICENSE) and is in preview. Code OSS
+and other third-party components keep their own licenses and notices.
