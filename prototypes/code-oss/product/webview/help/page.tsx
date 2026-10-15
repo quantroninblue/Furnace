@@ -6,7 +6,7 @@ import { Icon } from "../icons";
 import { Logo } from "../logo";
 import { post, useStore } from "../store";
 
-// Furnace Help (Furnace → Help, /help): the user guide (README.md) and data usage page
+// Furnace Help (Furnace → Help, /help): the user guide (GUIDE.md) and data usage page
 // (DATA_USAGE.md) bundled with the app, split into their sections, with search.
 
 type Section = { id: string; title: string; body: string };
@@ -39,7 +39,7 @@ export function HelpPage() {
       event.preventDefault();
       if (href.startsWith("#")) { setQuery(""); setTimeout(() => jump(href.slice(1)), 0); }
       else if (/^DATA_USAGE\.md/.test(href)) { setDocId("data"); setQuery(""); }
-      else if (/^README\.md/.test(href)) { setDocId("guide"); setQuery(""); }
+      else if (/^(GUIDE|README)\.md/.test(href)) { setDocId("guide"); setQuery(""); }
       else if (/^https?:\/\//.test(href)) post({ type: "openLink", url: href });
     }}>{children}</a>,
     img: ({ alt }) => <span>{alt}</span>,

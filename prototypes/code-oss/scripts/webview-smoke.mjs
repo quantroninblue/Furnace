@@ -463,11 +463,11 @@ try {
     await app.close(); app = undefined;
     // Furnace Help: the bundled user guide and data usage page, split into sections, with search.
     page = await open('help', 1000);
-    const guide = await readFile(path.join(root, '../../README.md'), 'utf8'), data = await readFile(path.join(root, '../../DATA_USAGE.md'), 'utf8');
+    const guide = await readFile(path.join(root, '../../GUIDE.md'), 'utf8'), data = await readFile(path.join(root, '../../DATA_USAGE.md'), 'utf8');
     await send(page, { type: 'help', docs: [{ id: 'guide', title: 'User Guide', markdown: guide }, { id: 'data', title: 'Data and Privacy', markdown: data }] });
     const contents = page.locator('.help-contents button');
     await expect(contents.first()).toHaveText('Overview');
-    await expect(contents).toContainText(['Set up', 'Connect a model', 'Working with the agent', 'Troubleshooting']);
+    await expect(contents).toContainText(['First launch', 'Connect a model', 'Working with the agent', 'Troubleshooting']);
     await expect(page.locator('.help-section h2', { hasText: 'Contents' })).toHaveCount(0);
     await expect(page.locator('.help-section pre').first()).not.toContainText('███');
     await page.getByLabel('Search help').fill('autocompute reset');
