@@ -6,6 +6,7 @@ import os from "node:os";
 import type { ToolHost } from "../main/agent-tools";
 import { createAgentTools } from "../main/agent-tools";
 import { TurnChanges, recordingHost, restoreChanges, mergeCheckpoints, Checkpoints } from "../main/checkpoints";
+import { slash } from "../main/search";
 import { testContext } from "./tool-context";
 
 const nodeHost = (root: string): ToolHost => ({
@@ -29,7 +30,7 @@ async function project(run: (root: string) => Promise<void>) {
 const read = (root: string, file: string) => fs.readFile(path.join(root, file), "utf8");
 const exists = (root: string, file: string) => fs.stat(path.join(root, file)).then(() => true, () => false);
 const turn = (root: string) => {
-  const changes = new TurnChanges(file => path.relative(root, file));
+  const changes = new TurnChanges(file => slash(path.relative(root, file)));
   return { changes, tools: createAgentTools("build", recordingHost(nodeHost(root), changes), testContext("auto")) };
 };
 
@@ -97,7 +98,7 @@ test("a failing multi-file patch rolls back the files it already changed", () =>
   // The second file's write fails (its path is a directory), after the first succeeded.
   await fs.mkdir(path.join(root, "blocked"));
   const host = nodeHost(root);
-  const failing: ToolHost = { ...host, write: async (file, text) => { if (file.endsWith("lib/b.ts")) throw new Error("disk full"); return host.write(file, text); } };
+  const failing: ToolHost = { ...host, write: async (file, text) => { if (file.endsWith(path.join("lib", "b.ts"))) throw new Error("disk full"); return host.write(file, text); } };
   const patched = createAgentTools("build", failing, testContext("auto"));
   await assert.rejects(patched.execute("apply_patch", { patch: [
     "*** Begin Patch", "*** Update File: src/app.ts", "-one", "+uno", " two", "*** Add File: extra.txt", "+extra", "*** Update File: src/lib/b.ts", "-b", "+B", "*** End Patch",
