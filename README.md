@@ -16,10 +16,11 @@ commands, with you deciding how much it may do on its own.
 Furnace is built on Code OSS, the open-source core of Visual Studio Code, so you
 also get a full editor, terminals, Git, debugging and extensions.
 
-> **Preview.** Furnace is a Linux development build (tested on Ubuntu 24.04). There
-> is no installer yet; you run it from this repository. Windows and macOS are not
-> supported yet. The from-source setup below has so far been used on one
-> development machine; please report anything that doesn't work.
+> **Preview.** Furnace runs on **macOS** (Apple Silicon), **Windows** (x64) and **Linux**
+> (tested on Ubuntu 24.04). macOS and Windows have test builds ([Install a test
+> build](#install-a-test-build)); on Linux you run it from this repository ([Set up from
+> source](#set-up-from-source)). Test builds are not signed yet, so your system warns you
+> the first time you open one. Please report anything that doesn't work.
 
 ## Your data stays yours
 
@@ -36,7 +37,8 @@ Details: [DATA_USAGE.md](DATA_USAGE.md).
 
 ## Contents
 
-- [Set up](#set-up)
+- [Install a test build](#install-a-test-build)
+- [Set up from source](#set-up-from-source)
 - [Connect a model](#connect-a-model)
 - [The workspace](#the-workspace)
 - [Working with the agent](#working-with-the-agent)
@@ -48,9 +50,40 @@ Details: [DATA_USAGE.md](DATA_USAGE.md).
 - [Tips](#tips)
 - [Troubleshooting](#troubleshooting)
 
-## Set up
+## Install a test build
 
-You need Linux x86-64, Git, Python 3, a C/C++ compiler (`build-essential`),
+Test builds are on the repository's [Actions page](https://github.com/quantroninblue/Furnace/actions):
+open the latest successful **macOS build** or **Windows build** run and download it under
+**Artifacts** (you need to be signed in to GitHub; each build is kept for 14 days). The
+download is a zip with the installer and a short `READ ME FIRST` note.
+
+**macOS** (Apple Silicon, macOS 13 or later)
+
+1. Open `Furnace-darwin-arm64.dmg` and drag Furnace into **Applications**.
+2. Open Furnace. macOS says it can't verify the app, because test builds aren't
+   notarized yet. Click **Done** (not Move to Trash).
+3. Open **System Settings → Privacy & Security**, scroll to the message about Furnace and
+   click **Open Anyway**, then confirm. (Or in Terminal:
+   `xattr -dr com.apple.quarantine /Applications/Furnace.app`.)
+4. The first time you save a sign-in or key, macOS asks whether Furnace may use its
+   keychain item (Safe Storage). Click **Always Allow**.
+
+**Windows** (64-bit Windows 10 or 11)
+
+1. Run `FurnaceUserSetup-x64.exe`. It installs for your user only; no administrator rights
+   needed.
+2. SmartScreen says "Windows protected your PC", because test builds aren't code-signed
+   yet. Click **More info**, then **Run anyway**.
+3. Recommended: install [Git for Windows](https://git-scm.com/download/win). The agent then
+   runs commands in Git Bash (otherwise PowerShell), and Claude Code on Windows needs it too.
+
+Windows has no command sandbox yet, so in **Auto** mode the agent asks before every
+command; edits inside the project still apply directly. On macOS, Auto runs commands in a
+sandbox, as on Linux.
+
+## Set up from source
+
+Linux only for now. You need Linux x86-64, Git, Python 3, a C/C++ compiler (`build-essential`),
 `pkg-config` and about 10 GB of free disk space. The editor core is built once
 from a pinned Code OSS release; later updates only rebuild Furnace itself.
 
@@ -354,7 +387,7 @@ A theme has six parts you can mix and match. On the custom theme page, every par
 | Part | Changes |
 | --- | --- |
 | **Background** | Behind the side bars, the panel area, the status bar and the menus: a solid colour, a gradient or a picture (yours, or one of the included ones; PNG, JPEG, GIF, WebP or SVG up to 10 MB, animated too). Pictures and gradients show through the panels, which are dimmed automatically so text stays readable (or set the dim yourself). Options: **glass panels** (blurred) and the **ember effect** (drifting sparks or a slow glow; it pauses while you type and stays still if your system asks for reduced motion). |
-| **Font** | Text outside the code: menus, side bars, the chat, Workspace and Help. Inter, Nunito and Atkinson Hyperlegible Next are included; fonts installed on your computer are listed too. |
+| **Font** | Text outside the code: menus, side bars, the chat, Workspace and Help. Inter, Nunito and Atkinson Hyperlegible Next are included; on Linux, fonts installed on your computer are listed too. |
 | **Font colour** | The main and secondary colours of that text. |
 | **Editor font colour** | The code's syntax colours: Charcoal, Midnight Purple, Arctic, Daylight, or any colour theme you installed. |
 | **Editor colour** | The code editor's background and the tabs above it (solid colours only). |
@@ -433,7 +466,7 @@ Type `/` in the message box for the command list:
   the workspace page, `/zoom`, or `Ctrl+=` / `Ctrl+-` to adjust it.
 - **Window opacity:** the window is very slightly see-through. Change it with
   **Display → Window Opacity…** or the `aiGui.window.opacity` setting (0.5–1; 1 is
-  solid). It works on Linux with X11 and a compositing window manager.
+  solid). It works on macOS, Windows, and Linux with X11 and a compositing window manager.
 - The **Ask / Run** switch in the message box toggles between talking to the agent
   and running your own commands.
 - Resuming a chat restores its messages, brief, sources and attachments; shared
@@ -458,7 +491,7 @@ Type `/` in the message box for the command list:
 | --- | --- |
 | The agent says it has no file or command tools | Make sure you're in **Build** mode, a folder is open, and it is trusted (**Trust Folder** above the message box). |
 | Commands fail with "Permission denied" or network errors in Auto mode | That's the sandbox. Let the agent retry with escalation and approve it, or switch to Ask first or Full access for that task. |
-| "no sandbox" next to the project name | Furnace couldn't build or start its sandbox (on Linux it needs a C compiler and a recent kernel). In Auto mode, commands will ask for approval instead. |
+| "no sandbox" next to the project name | Furnace couldn't build or start its sandbox (on Linux it needs a C compiler and a recent kernel; Windows has no sandbox yet). In Auto mode, commands will ask for approval instead. |
 | Claude sign-in finished but nothing changed | Open Connections and choose **Refresh Connections**. |
 | "Remember securely" is greyed out | Your system has no unlocked keychain; keys last for the current session only. |
 | "… doesn't support tool calling" | That local model can't use tools, which Plan, Build and Research need. Choose one that does (for example Qwen or Llama 3.1+), or use Discuss. |
