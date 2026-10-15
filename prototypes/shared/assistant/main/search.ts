@@ -2,6 +2,9 @@ import path from "node:path";
 import { promises as fs, constants } from "node:fs";
 import { spawn } from "node:child_process";
 
+/** A path as shown to the model and the user, and as saved rules match it: always with "/" (Windows uses "\\"). */
+export const slash = (file: string) => file.split(path.sep).join("/");
+
 // glob/grep for agent tools. ripgrep is used when installed; otherwise a bounded
 // JavaScript walker. Both skip VCS metadata and dependency folders by default.
 const SKIP = new Set([".git", "node_modules", ".hg", ".svn", "__pycache__", ".venv", "dist", "out", ".cache"]);
@@ -60,7 +63,7 @@ const findRipgrep = () => (ripgrep ??= (async () => {
 
 export async function searchFiles(target: string, pattern: string, options: { glob?: string; ignoreCase: boolean; base: string }, signal: AbortSignal) {
   const limit = 300, lines: string[] = [];
-  const show = (file: string) => (file.startsWith(options.base + path.sep) ? path.relative(options.base, file) : file);
+  const show = (file: string) => (file.startsWith(options.base + path.sep) ? slash(path.relative(options.base, file)) : file);
   const rg = await findRipgrep();
   if (rg) {
     const args = ["--line-number", "--no-heading", "--color=never", "--max-columns=400", "--max-columns-preview", "--max-count=100", "--glob=!.git", ...(options.ignoreCase ? ["-i"] : []), ...(options.glob ? [`--glob=${options.glob}`] : []), "-e", pattern, "--", target];
