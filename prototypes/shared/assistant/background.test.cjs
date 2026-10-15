@@ -12,7 +12,8 @@ async function repository(t) {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'bg-repo-'))), storage = await fs.mkdtemp(path.join(os.tmpdir(), 'bg-store-'));
     t.after(async () => { await fs.rm(root, { recursive: true, force: true }); await fs.rm(storage, { recursive: true, force: true }); });
     const git = (...args) => execFileSync('git', args, { cwd: root, env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).toString();
-    git('init', '-q'); await fs.writeFile(path.join(root, 'a.txt'), 'one\ntwo\nthree\n'); await fs.writeFile(path.join(root, 'b.txt'), 'bee\n');
+    // Checked-out files keep the bytes written here on every platform (Git for Windows defaults to CRLF checkouts).
+    git('init', '-q'); git('config', 'core.autocrlf', 'false'); await fs.writeFile(path.join(root, 'a.txt'), 'one\ntwo\nthree\n'); await fs.writeFile(path.join(root, 'b.txt'), 'bee\n');
     git('add', '-A'); git('commit', '-qm', 'start');
     return { root, storage, git };
 }
