@@ -1,0 +1,345 @@
+diff --git a/src/vs/platform/menubar/electron-main/menubar.ts b/src/vs/platform/menubar/electron-main/menubar.ts
+--- a/src/vs/platform/menubar/electron-main/menubar.ts
++++ b/src/vs/platform/menubar/electron-main/menubar.ts
+@@ -345,6 +345,14 @@
+ 			menubar.append(gotoMenuItem);
+ 		}
+ 
++		// Themes (Furnace product patch)
++		if (this.shouldDrawMenu('Themes')) {
++			const themesMenu = new Menu();
++			const themesMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mThemes', comment: ['&& denotes a mnemonic'] }, "T&&hemes")), submenu: themesMenu });
++			this.setMenuById(themesMenu, 'Themes');
++			menubar.append(themesMenuItem);
++		}
++
+ 		// Debug
+ 		if (this.shouldDrawMenu('Run')) {
+ 			const debugMenu = new Menu();
+diff --git a/src/vs/workbench/workbench.desktop.main.ts b/src/vs/workbench/workbench.desktop.main.ts
+--- a/src/vs/workbench/workbench.desktop.main.ts
++++ b/src/vs/workbench/workbench.desktop.main.ts
+@@ -215,6 +215,9 @@
+ // System-wide (OS global) Keybindings
+ import './contrib/keybindings/electron-browser/systemWideKeybindings.contribution.js';
+ 
++// Furnace product patch: the Themes menu and Furnace themes
++import './browser/parts/titlebar/furnaceThemes.js';
++
+ //#endregion
+ 
+ 
+diff --git a/src/vs/workbench/browser/parts/titlebar/furnaceThemes.ts b/src/vs/workbench/browser/parts/titlebar/furnaceThemes.ts
+new file mode 100644
+--- /dev/null
++++ b/src/vs/workbench/browser/parts/titlebar/furnaceThemes.ts
+@@ -0,0 +1,309 @@
++/*---------------------------------------------------------------------------------------------
++ *  Furnace product patch (patches/themes-menu.patch): the Themes menu and what a Furnace theme
++ *  changes in this window. The Furnace extension (product/theme-manager.cjs) owns themes and calls:
++ *  - furnace.theme.apply(spec): colour overrides, syntax colours and base theme, written to this
++ *    window's in-memory configuration (so two windows can show different themes and nothing is
++ *    written to settings.json); the backdrop behind the panels (gradient or picture, glass, ember
++ *    effect), with the panels made see-through just enough for text to stay readable; the UI font.
++ *  - furnace.themes.setMenu({ presets, saved, current, project, glow }): the dynamic menu entries.
++ *  - furnace.theme.system(): whether the system prefers dark; changes call aiGui.theme.systemChanged.
++ *--------------------------------------------------------------------------------------------*/
++
++import { $, append, addDisposableListener, getWindow } from '../../../../base/browser/dom.js';
++import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
++import { FileAccess } from '../../../../base/common/network.js';
++import { URI } from '../../../../base/common/uri.js';
++import { localize, localize2 } from '../../../../nls.js';
++import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
++import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
++import { CommandsRegistry, ICommandService } from '../../../../platform/commands/common/commands.js';
++import { ConfigurationTarget, IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
++import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
++import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
++import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
++import { IHostColorSchemeService } from '../../../services/themes/common/hostColorSchemeService.js';
++
++const MenubarThemesMenu = new MenuId('MenubarThemesMenu');
++const ThemesPresetsMenu = new MenuId('FurnaceThemesPresets');
++const ThemesSavedMenu = new MenuId('FurnaceThemesSaved');
++const currentTheme = new RawContextKey<string>('furnace.theme', '');
++const projectTheme = new RawContextKey<boolean>('furnace.themeProject', false);
++const agentGlow = new RawContextKey<boolean>('furnace.agentGlow', false);
++
++MenuRegistry.appendMenuItem(MenuId.MenubarMainMenu, {
++	submenu: MenubarThemesMenu,
++	title: { value: 'Themes', original: 'Themes', mnemonicTitle: localize({ key: 'mThemes', comment: ['&& denotes a mnemonic'] }, "T&&hemes") },
++	order: 5.5
++});
++// Submenu entries are registered again whenever their contents change: the menu bar only redraws
++// when the Themes menu itself changes, not when a submenu does.
++const submenus = new DisposableStore();
++function registerSubmenus(): void {
++	submenus.clear();
++	submenus.add(MenuRegistry.appendMenuItem(MenubarThemesMenu, { submenu: ThemesPresetsMenu, title: localize('themePresets', "Presets"), group: '2_choose', order: 1 }));
++	submenus.add(MenuRegistry.appendMenuItem(MenubarThemesMenu, { submenu: ThemesSavedMenu, title: localize('themeSaved', "My Themes"), group: '2_choose', order: 2 }));
++}
++registerSubmenus();
++
++// Static entries run the Furnace extension's commands (activating it if needed).
++const entries: [string, string, string, string, number, RawContextKey<boolean>?][] = [
++	['furnace.themes.create', localize('themeCreate', "Create a Custom Theme..."), 'aiGui.theme.create', '1_create', 1],
++	['furnace.themes.edit', localize('themeEdit', "Edit Current Theme..."), 'aiGui.theme.edit', '1_create', 2],
++	['furnace.themes.surprise', localize('themeSurprise', "Surprise Me"), 'aiGui.theme.surprise', '2_choose', 3],
++	['furnace.themes.project', localize('themeProject', "Use for This Project"), 'aiGui.theme.useForProject', '3_where', 1, projectTheme],
++	['furnace.themes.dayNight', localize('themeDayNight', "Day and Night..."), 'aiGui.theme.dayNight', '3_where', 2],
++	['furnace.themes.glow', localize('themeGlow', "Agent Glow"), 'aiGui.theme.toggleGlow', '4_effects', 1, agentGlow],
++	['furnace.themes.import', localize('themeImport', "Import Theme..."), 'aiGui.theme.import', '5_share', 1],
++	['furnace.themes.export', localize('themeExport', "Export Current Theme..."), 'aiGui.theme.export', '5_share', 2],
++];
++for (const [id, title, command, group, order, toggled] of entries) {
++	registerAction2(class extends Action2 {
++		constructor() { super({ id, title: { value: title, original: title }, toggled: toggled?.isEqualTo(true), menu: { id: MenubarThemesMenu, group, order } }); }
++		run(accessor: ServicesAccessor): Promise<unknown> { return accessor.get(ICommandService).executeCommand(command); }
++	});
++}
++registerAction2(class extends Action2 {
++	constructor() { super({ id: 'furnace.themes.choose', title: localize2('themeChoose', "Choose Theme"), category: localize2('themes', "Themes"), f1: true }); }
++	run(accessor: ServicesAccessor): Promise<unknown> { return accessor.get(ICommandService).executeCommand('aiGui.theme.pick'); }
++});
++
++// ---------- dynamic menu entries ----------
++interface MenuEntry { id: string; name: string }
++const menuItems = new DisposableStore();
++const refreshOnFocus = new MutableDisposable();
++let keys: { current: IContextKey<string>; project: IContextKey<boolean>; glow: IContextKey<boolean> } | undefined;
++const text = (value: unknown, limit: number) => typeof value === 'string' ? value.slice(0, limit) : '';
++const list = (value: unknown): MenuEntry[] => Array.isArray(value) ? value.slice(0, 60).map(item => ({ id: text(item?.id, 80), name: text(item?.name, 80) })).filter(item => item.id && item.name) : [];
++
++CommandsRegistry.registerCommand('furnace.themes.setMenu', (accessor, data?: { presets?: unknown; saved?: unknown; current?: unknown; project?: unknown; glow?: unknown }) => {
++	const contextKeys = accessor.get(IContextKeyService);
++	keys ??= { current: currentTheme.bindTo(contextKeys), project: projectTheme.bindTo(contextKeys), glow: agentGlow.bindTo(contextKeys) };
++	keys.current.set(text(data?.current, 80)); keys.project.set(data?.project === true); keys.glow.set(data?.glow === true);
++	menuItems.clear();
++	const add = (menu: MenuId, items: MenuEntry[]) => items.forEach((item, index) => {
++		const command = `furnace.themes.apply.${menu.id}.${index}`;
++		menuItems.add(CommandsRegistry.registerCommand(command, accessor => accessor.get(ICommandService).executeCommand('aiGui.theme.apply', item.id)));
++		menuItems.add(MenuRegistry.appendMenuItem(menu, { command: { id: command, title: item.name, toggled: ContextKeyExpr.equals('furnace.theme', item.id) }, group: '1_themes', order: index }));
++	});
++	add(ThemesPresetsMenu, list(data?.presets));
++	const saved = list(data?.saved);
++	if (saved.length) { add(ThemesSavedMenu, saved); }
++	else { menuItems.add(MenuRegistry.appendMenuItem(ThemesSavedMenu, { command: { id: 'furnace.themes.create', title: localize('themeNoneSaved', "No saved themes yet"), precondition: ContextKeyExpr.false() }, group: '1_themes' })); }
++	registerSubmenus();
++	// The native menu bar only takes updates while the window's own document has focus (not a
++	// webview, such as the theme page): redo this update once focus comes back.
++	const win = getWindow(accessor.get(ILayoutService).mainContainer);
++	if (!win.document.hasFocus()) {
++		refreshOnFocus.value = addDisposableListener(win.document, 'focusin', () => { refreshOnFocus.clear(); if (win.document.hasFocus()) { registerSubmenus(); } });
++	}
++});
++
++// ---------- applying a theme ----------
++interface Layer { kind: 'solid' | 'gradient' | 'picture'; stops: string[]; angle: number; picture: string | null; fit: 'cover' | 'tile' | 'center'; dim: 'auto' | number; glass: boolean; ember: 'off' | 'sparks' | 'glow'; emberIntensity: number; panel: string; text: string }
++interface Spec { colors?: Record<string, string>; tokenColors?: unknown; colorTheme?: string | null; panelKeys?: string[]; layer?: Layer | null; font?: { family: string; data?: string } | null }
++
++const HEX = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i;
++const rgb = (hex: string) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
++const channel = (v: number) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
++const luminance = ([r, g, b]: number[]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
++const contrast = (a: number[], b: number[]) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
++
++/** The lowest panel opacity at which text stays readable (4.5:1) over 95% of the backdrop's colours. */
++function readableOpacity(samples: number[][], panel: string, text: string): number {
++	const p = rgb(panel), t = rgb(text);
++	for (let opacity = 0.45; opacity < 0.97; opacity += 0.02) {
++		const ratios = samples.map(s => contrast(t, s.map((v, i) => p[i] * opacity + v * (1 - opacity)))).sort((a, b) => a - b);
++		if (ratios[Math.floor(ratios.length * 0.05)] >= 4.5) { return Math.round(opacity * 100) / 100; }
++	}
++	return 0.97;
++}
++
++/** Colour samples of a picture (64×64), or undefined when it can't be read. */
++async function pictureSamples(url: string, win: Window & typeof globalThis): Promise<number[][] | undefined> {
++	try {
++		const image = new win.Image();
++		image.src = url;
++		await image.decode();
++		const canvas = win.document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
++		const context = canvas.getContext('2d', { willReadFrequently: true });
++		if (!context) { return undefined; }
++		context.drawImage(image, 0, 0, 64, 64);
++		const data = context.getImageData(0, 0, 64, 64).data, samples: number[][] = [];
++		for (let i = 0; i < data.length; i += 16) { samples.push([data[i], data[i + 1], data[i + 2]]); }
++		return samples;
++	} catch { return undefined; }
++}
++
++const styles = `
++.monaco-workbench > .furnace-backdrop { position: absolute; inset: 0; z-index: -1; pointer-events: none; background-color: var(--furnace-backdrop-color); }
++.monaco-workbench > .furnace-backdrop > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
++/* The layout grid and the title bar paint their own solid colour; with a backdrop they let it through. */
++.monaco-workbench.furnace-backdrop-on .monaco-grid-view { background-color: transparent !important; }
++.monaco-workbench.furnace-backdrop-on .part.titlebar { background-color: var(--furnace-panel) !important; }
++.monaco-workbench.furnace-glass .part.sidebar, .monaco-workbench.furnace-glass .part.auxiliarybar, .monaco-workbench.furnace-glass .part.activitybar,
++.monaco-workbench.furnace-glass .part.panel, .monaco-workbench.furnace-glass .part.statusbar, .monaco-workbench.furnace-glass .part.titlebar { backdrop-filter: blur(18px) saturate(1.15); }
++`;
++
++class ThemeWindow {
++	private readonly disposables = new DisposableStore();
++	private readonly effect = new DisposableStore();
++	private style: HTMLStyleElement | undefined;
++	private backdrop: HTMLElement | undefined;
++	private readonly fonts = new Set<string>();
++	private generation = 0;
++
++	constructor(private readonly container: HTMLElement, private readonly configuration: IConfigurationService, private readonly accessibility: IAccessibilityService) { }
++
++	private get window(): Window & typeof globalThis { return getWindow(this.container) as Window & typeof globalThis; }
++
++	async apply(spec: Spec | null): Promise<{ opacity: number | null }> {
++		const generation = ++this.generation;
++		this.ensureStyle();
++		const layer = spec?.layer && typeof spec.layer === 'object' ? spec.layer : null;
++		let opacity: number | null = null;
++		const colors: Record<string, string> = {};
++		for (const [key, value] of Object.entries(spec?.colors ?? {})) { if (typeof value === 'string' && HEX.test(value) && /^[\w.]{1,80}$/.test(key)) { colors[key] = value; } }
++		let pictureUrl: string | undefined;
++		if (layer) {
++			const panel = HEX.test(layer.panel) ? layer.panel.slice(0, 7) : '#101010', textColor = HEX.test(layer.text) ? layer.text.slice(0, 7) : '#dadada';
++			const stops = (Array.isArray(layer.stops) ? layer.stops : []).filter(stop => typeof stop === 'string' && HEX.test(stop)).slice(0, 4);
++			pictureUrl = layer.kind === 'picture' && typeof layer.picture === 'string' ? FileAccess.uriToBrowserUri(URI.file(layer.picture)).toString(true) : undefined;
++			if (typeof layer.dim === 'number') { opacity = Math.max(0, Math.min(0.95, layer.dim)); }
++			else {
++				// Ember light and pictures are only partly known; sample what the panels sit on.
++				const samples = pictureUrl ? await pictureSamples(pictureUrl, this.window) : stops.map(rgb);
++				opacity = samples?.length ? readableOpacity(layer.ember !== 'off' ? [...samples, [255, 140, 60]] : samples, panel, textColor) : 0.85;
++				if (generation !== this.generation) { return { opacity }; }
++			}
++			const suffix = Math.round(opacity * 255).toString(16).padStart(2, '0');
++			this.container.style.setProperty('--furnace-panel', panel + suffix);
++			for (const key of spec?.panelKeys ?? []) { if (typeof colors[key] === 'string') { colors[key] = colors[key].slice(0, 7) + suffix; } }
++			this.showBackdrop(layer, stops, pictureUrl, panel);
++		} else { this.hideBackdrop(); }
++		this.setFont(spec?.font ?? null);
++		await this.write('workbench.colorCustomizations', spec && Object.keys(colors).length ? colors : undefined);
++		await this.write('editor.tokenColorCustomizations', spec?.tokenColors && typeof spec.tokenColors === 'object' ? spec.tokenColors : undefined);
++		await this.write('workbench.colorTheme', typeof spec?.colorTheme === 'string' && spec.colorTheme ? spec.colorTheme.slice(0, 100) : undefined);
++		return { opacity };
++	}
++
++	private async write(key: string, value: unknown): Promise<void> {
++		if (value === undefined && this.configuration.inspect(key).memoryValue === undefined) { return; }
++		await this.configuration.updateValue(key, value, ConfigurationTarget.MEMORY);
++	}
++
++	private ensureStyle(): void {
++		if (this.style) { return; }
++		this.style = append(this.container, $('style.furnace-themes')) as HTMLStyleElement;
++		this.style.textContent = styles;
++		const font = append(this.container, $('style.furnace-themes-font')) as HTMLStyleElement;
++		this.disposables.add(toDisposable(() => font.remove()));
++	}
++
++	private setFont(font: { family: string; data?: string } | null): void {
++		const element = this.container.querySelector('style.furnace-themes-font');
++		const family = font && typeof font.family === 'string' && /^[\w .,'-]{1,60}$/.test(font.family) ? font.family : '';
++		if (family && typeof font?.data === 'string' && !this.fonts.has(family)) {
++			// Bundled fonts arrive as data: the workbench's font-src only allows the app itself.
++			try {
++				const bytes = Uint8Array.from(atob(font.data), c => c.charCodeAt(0));
++				const face = new this.window.FontFace(family, bytes, { weight: '100 900' });
++				this.window.document.fonts.add(face); this.fonts.add(family);
++			} catch { /* falls back to the next font in the list */ }
++		}
++		if (element) { element.textContent = family ? `.monaco-workbench.monaco-workbench, .monaco-workbench .monaco-menu-container { font-family: "${family}", system-ui, "Ubuntu", "Droid Sans", sans-serif !important; }` : ''; }
++	}
++
++	private showBackdrop(layer: Layer, stops: string[], pictureUrl: string | undefined, panel: string): void {
++		this.container.classList.toggle('furnace-glass', layer.glass === true);
++		this.container.classList.add('furnace-backdrop-on');
++		if (!this.backdrop) {
++			this.backdrop = $('.furnace-backdrop');
++			this.container.prepend(this.backdrop);
++		}
++		const backdrop = this.backdrop;
++		backdrop.style.setProperty('--furnace-backdrop-color', panel);
++		const angle = Number.isFinite(layer.angle) ? layer.angle : 160;
++		if (pictureUrl) {
++			const fit = layer.fit === 'tile' ? 'auto' : layer.fit === 'center' ? 'contain' : 'cover';
++			backdrop.style.backgroundImage = `url("${pictureUrl.replace(/["\\]/g, '')}")`;
++			backdrop.style.backgroundSize = fit; backdrop.style.backgroundRepeat = layer.fit === 'tile' ? 'repeat' : 'no-repeat'; backdrop.style.backgroundPosition = 'center';
++		} else {
++			backdrop.style.backgroundImage = stops.length >= 2 ? `linear-gradient(${angle}deg, ${stops.join(', ')})` : '';
++			backdrop.style.backgroundSize = ''; backdrop.style.backgroundRepeat = ''; backdrop.style.backgroundPosition = '';
++		}
++		this.startEmber(layer.ember, Math.max(0.1, Math.min(1, Number(layer.emberIntensity) || 0.4)));
++	}
++
++	private hideBackdrop(): void {
++		this.effect.clear();
++		this.backdrop?.remove(); this.backdrop = undefined;
++		this.container.classList.remove('furnace-glass', 'furnace-backdrop-on');
++		this.container.style.removeProperty('--furnace-panel');
++	}
++
++	/** Drifting sparks or a slow pulsing glow behind the panels; still under reduced motion, paused while typing. */
++	private startEmber(mode: Layer['ember'], intensity: number): void {
++		this.effect.clear();
++		if (!this.backdrop || (mode !== 'sparks' && mode !== 'glow')) { return; }
++		const win = this.window, canvas = append(this.backdrop, $<HTMLCanvasElement>('canvas'));
++		this.effect.add(toDisposable(() => canvas.remove()));
++		const context = canvas.getContext('2d');
++		if (!context) { return; }
++		const sparks = Array.from({ length: Math.round(30 + intensity * 90) }, () => ({ x: Math.random(), y: Math.random(), speed: 0.02 + Math.random() * 0.05, drift: Math.random() * Math.PI * 2, size: 0.6 + Math.random() * 1.8, life: Math.random() }));
++		let pausedUntil = 0, last = 0, frame = 0;
++		const draw = (now: number) => {
++			const width = canvas.clientWidth, height = canvas.clientHeight;
++			if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
++			context.clearRect(0, 0, width, height);
++			const t = now / 1000, dt = last ? Math.min(0.1, (now - last) / 1000) : 0; last = now;
++			if (mode === 'glow') {
++				const pulse = 0.75 + 0.25 * Math.sin(t * 2 * Math.PI / 6);
++				const gradient = context.createRadialGradient(width / 2, height * 1.05, 0, width / 2, height * 1.05, Math.max(width, height) * 0.75);
++				gradient.addColorStop(0, `rgba(255, 120, 40, ${0.45 * intensity * pulse})`);
++				gradient.addColorStop(0.5, `rgba(200, 60, 20, ${0.18 * intensity * pulse})`);
++				gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
++				context.fillStyle = gradient; context.fillRect(0, 0, width, height);
++				return;
++			}
++			for (const spark of sparks) {
++				spark.y -= spark.speed * dt; spark.x += Math.sin(t * 0.8 + spark.drift) * 0.0006; spark.life += dt * 0.15;
++				if (spark.y < -0.02 || spark.life > 1) { spark.y = 1.02; spark.x = Math.random(); spark.life = 0; }
++				const fade = Math.sin(Math.PI * Math.min(1, spark.life)) * intensity;
++				const x = spark.x * width, y = spark.y * height, radius = spark.size * 3;
++				const glow = context.createRadialGradient(x, y, 0, x, y, radius);
++				glow.addColorStop(0, `rgba(255, 200, 120, ${0.9 * fade})`); glow.addColorStop(0.4, `rgba(255, 120, 40, ${0.5 * fade})`); glow.addColorStop(1, 'rgba(255, 80, 20, 0)');
++				context.fillStyle = glow; context.fillRect(x - radius, y - radius, radius * 2, radius * 2);
++			}
++		};
++		const loop = (now: number) => {
++			frame = win.requestAnimationFrame(loop);
++			if (win.document.hidden || now < pausedUntil || now - last < 33) { if (now < pausedUntil) { last = now; } return; }
++			draw(now);
++		};
++		const start = () => {
++			win.cancelAnimationFrame(frame);
++			if (this.accessibility.isMotionReduced()) { draw(4000); return; } // One still frame.
++			frame = win.requestAnimationFrame(loop);
++		};
++		start();
++		this.effect.add(toDisposable(() => win.cancelAnimationFrame(frame)));
++		this.effect.add(this.accessibility.onDidChangeReducedMotion(start));
++		this.effect.add(addDisposableListener(win, 'keydown', () => { pausedUntil = win.performance.now() + 1500; }, true));
++	}
++}
++
++let themeWindow: ThemeWindow | undefined;
++const getThemeWindow = (accessor: ServicesAccessor) => themeWindow ??= new ThemeWindow(accessor.get(ILayoutService).mainContainer, accessor.get(IConfigurationService), accessor.get(IAccessibilityService));
++CommandsRegistry.registerCommand('furnace.theme.apply', (accessor, spec?: Spec | null) => getThemeWindow(accessor).apply(spec && typeof spec === 'object' ? spec : null));
++
++let watchingScheme = false;
++CommandsRegistry.registerCommand('furnace.theme.system', accessor => {
++	const scheme = accessor.get(IHostColorSchemeService);
++	if (!watchingScheme) {
++		watchingScheme = true;
++		const commands = accessor.get(ICommandService);
++		scheme.onDidChangeColorScheme(() => { void commands.executeCommand('aiGui.theme.systemChanged', { dark: scheme.dark }).catch(() => { }); });
++	}
++	return { dark: scheme.dark };
++});

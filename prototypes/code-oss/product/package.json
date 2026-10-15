@@ -25,7 +25,11 @@
       },
       {
         "command": "aiGui.tour",
-        "title": "Furnace: Getting Started"
+        "title": "Furnace: Begin Tutorial"
+      },
+      {
+        "command": "aiGui.help",
+        "title": "Furnace: Help"
       },
       {
         "command": "aiGui.connections",
@@ -160,6 +164,42 @@
       {
         "command": "aiGui.checkForUpdates",
         "title": "Furnace: Check for Updates"
+      },
+      {
+        "command": "aiGui.theme.create",
+        "title": "Furnace: Create a Custom Theme"
+      },
+      {
+        "command": "aiGui.theme.edit",
+        "title": "Furnace: Edit Current Theme"
+      },
+      {
+        "command": "aiGui.theme.pick",
+        "title": "Furnace: Choose Theme"
+      },
+      {
+        "command": "aiGui.theme.surprise",
+        "title": "Furnace: Surprise Me (Random Theme)"
+      },
+      {
+        "command": "aiGui.theme.useForProject",
+        "title": "Furnace: Use This Theme for This Project"
+      },
+      {
+        "command": "aiGui.theme.dayNight",
+        "title": "Furnace: Day and Night Themes"
+      },
+      {
+        "command": "aiGui.theme.toggleGlow",
+        "title": "Furnace: Toggle Agent Glow"
+      },
+      {
+        "command": "aiGui.theme.import",
+        "title": "Furnace: Import Theme"
+      },
+      {
+        "command": "aiGui.theme.export",
+        "title": "Furnace: Export Current Theme"
       }
     ],
     "viewsContainers": {
@@ -277,6 +317,21 @@
           "type": "boolean",
           "default": false,
           "description": "Show Toggle Developer Tools and Process Explorer in release builds (for troubleshooting). Takes effect after a restart."
+        },
+        "aiGui.theme.current": {
+          "type": "string",
+          "default": "charcoal",
+          "description": "The Furnace theme (Themes menu): a preset id such as charcoal, ember, midnight or paper, or a saved theme. Per-project themes (Themes → Use for This Project) take precedence."
+        },
+        "aiGui.theme.night": {
+          "type": "string",
+          "default": "",
+          "description": "Theme shown when your system is in dark mode (Themes → Day and Night). Empty: one theme all day."
+        },
+        "aiGui.theme.agentGlow": {
+          "type": "boolean",
+          "default": false,
+          "description": "A soft glow around the chat panel: the theme accent while the agent works, amber while it waits for you, red after an error."
         }
       }
     },
@@ -441,76 +496,6 @@
         "command": "aiGui.inlineEdit.cancel",
         "key": "escape",
         "when": "aiGui.inlineEditRunning"
-      }
-    ],
-    "walkthroughs": [
-      {
-        "id": "aiGui.start",
-        "title": "Get Started with Furnace",
-        "description": "Connect a model, open a project and run a first reviewed task.",
-        "steps": [
-          {
-            "id": "connect",
-            "title": "Connect a model",
-            "description": "Use your ChatGPT plan, Claude Code, an API key or a local Ollama model. Nothing switches accounts or billing on its own.\n[Open Connections](command:aiGui.connections)",
-            "media": {
-              "markdown": "media/walkthrough/connect.md"
-            },
-            "completionEvents": [
-              "onCommand:aiGui.connections"
-            ]
-          },
-          {
-            "id": "project",
-            "title": "Open a project",
-            "description": "The agent works inside the folder you open and trust.\n[Open Folder](command:workbench.action.files.openFolder)",
-            "media": {
-              "markdown": "media/walkthrough/project.md"
-            },
-            "completionEvents": [
-              "onCommand:workbench.action.files.openFolder",
-              "onContext:workspaceFolderCount > 0"
-            ]
-          },
-          {
-            "id": "permissions",
-            "title": "Choose what the agent may do",
-            "description": "Ask first, Auto (sandboxed commands) or Full access, from the box under the message field.\n[Focus the Conversation](command:aiGui.focusConversation)",
-            "media": {
-              "markdown": "media/walkthrough/permissions.md"
-            }
-          },
-          {
-            "id": "task",
-            "title": "Run a first task",
-            "description": "Pick the Build page, describe a small change, and watch each step and diff.\n[Open the Workspace](command:aiGui.home)",
-            "media": {
-              "markdown": "media/walkthrough/task.md"
-            },
-            "completionEvents": [
-              "onCommand:aiGui.home"
-            ]
-          },
-          {
-            "id": "review",
-            "title": "Review, revert or rewind",
-            "description": "Every reply lists the files it changed. Review diffs, keep or revert blocks in the editor, ask a second model for an opinion, or rewind from the timeline.\n[Open the Timeline](command:aiGui.timeline)",
-            "media": {
-              "markdown": "media/walkthrough/review.md"
-            },
-            "completionEvents": [
-              "onCommand:aiGui.timeline"
-            ]
-          },
-          {
-            "id": "privacy",
-            "title": "Your data stays yours",
-            "description": "No Furnace account and no telemetry. Conversations, rules and the activity log stay on this device; only what you send goes to the model you chose.",
-            "media": {
-              "markdown": "media/walkthrough/privacy.md"
-            }
-          }
-        ]
       }
     ]
   },

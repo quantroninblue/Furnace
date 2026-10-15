@@ -46,6 +46,10 @@ Some features send the same kind of content in extra requests to a model you cho
 - **Inline edits** send the selected code, the instruction and up to about 60 lines
   around it.
 - **Background tasks** work like Build replies, on a copy of the project.
+- **Autocompute** (when you tick it): your online model also receives a short profile
+  of your local Ollama models (name, size and their record on this machine) and, for each
+  task it delegates, the local model's summary, the check's output and the diff. The task
+  itself runs on your local model (`127.0.0.1`), so its file reads stay on your machine.
 
 Nothing is shared just because it is open or captured. Each provider handles that
 data under its own terms and privacy policy. API-key use is billed by the provider;
@@ -94,6 +98,14 @@ All app data lives in your Furnace profile folder (by default
   These copies can include anything in the files the agent edited.
 - `conversations/settings/permissions.json`: the allow and deny rules you saved,
   per project.
+- `conversations/settings/autocompute.json`: whether Autocompute is on, and each local
+  model's recent results per kind of task (accepted, accepted after revision, taken over),
+  plus the online model's one-time assessment of it (Ollama's size, family and abilities,
+  and a confidence score per kind of task).
+- `themes/`: your saved themes (`themes.json`) and copies of the pictures you chose for
+  theme backgrounds (`pictures/`). Which theme each project uses is kept in the editor's own
+  storage in the same profile. Themes use no network: exported `.furnace-theme` files
+  (including their picture) are written only where you save them.
 - `conversations/settings/spend.json`: daily dollar totals per provider for
   API-key replies (amounts only, no content), kept for about 400 days.
 - `conversations/audit/`: the activity log for each project: titles of the agent's

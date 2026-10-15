@@ -48,6 +48,7 @@ const StepItem = memo(function StepItem({ step }: { step: Step }) {
     <div className={`step ${step.status}`}>
       <div className="step-head">
         <span className="step-icon">{icons[step.status] || "·"}</span><span className="step-title">{step.title}</span>
+        {step.by && <span className="step-by" title={`Done by the local model ${step.by} for a delegated task`}>{step.by.slice(step.by.indexOf("/") + 1)}</span>}
         {step.startedAt !== undefined && step.endedAt !== undefined && step.endedAt - step.startedAt >= 2000 ? <span className="step-time">{duration(step.endedAt - step.startedAt)}</span> : null}
       </div>
       {step.detail && <small className="step-detail">{step.detail}</small>}

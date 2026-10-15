@@ -1,0 +1,265 @@
+diff --git a/src/vs/platform/menubar/electron-main/menubar.ts b/src/vs/platform/menubar/electron-main/menubar.ts
+index 86f8519f..ca9130e9 100644
+--- a/src/vs/platform/menubar/electron-main/menubar.ts
++++ b/src/vs/platform/menubar/electron-main/menubar.ts
+@@ -373,6 +373,14 @@ export class Menubar extends Disposable {
+ 			menubar.append(macWindowMenuItem);
+ 		}
+ 
++		// Furnace (Furnace product patch)
++		if (this.shouldDrawMenu('Furnace')) {
++			const furnaceMenu = new Menu();
++			const furnaceMenuItem = new MenuItem({ label: this.mnemonicLabel(nls.localize({ key: 'mFurnace', comment: ['&& denotes a mnemonic'] }, "F&&urnace")), submenu: furnaceMenu });
++			this.setMenuById(furnaceMenu, 'Furnace');
++			menubar.append(furnaceMenuItem);
++		}
++
+ 		// Help
+ 		if (this.shouldDrawMenu('Help')) {
+ 			const helpMenu = new Menu();
+diff --git a/src/vs/workbench/browser/parts/titlebar/menubar.contribution.ts b/src/vs/workbench/browser/parts/titlebar/menubar.contribution.ts
+index ef5a298c..b2057939 100644
+--- a/src/vs/workbench/browser/parts/titlebar/menubar.contribution.ts
++++ b/src/vs/workbench/browser/parts/titlebar/menubar.contribution.ts
+@@ -89,3 +89,6 @@ MenuRegistry.appendMenuItem(MenuId.MenubarMainMenu, {
+ 	when: IsMacNativeContext,
+ 	order: 9
+ });
++
++// Furnace product patch: the Furnace menu and the tutorial overlay.
++import './furnaceTutorial.js';
+diff --git a/src/vs/workbench/browser/parts/titlebar/furnaceTutorial.ts b/src/vs/workbench/browser/parts/titlebar/furnaceTutorial.ts
+new file mode 100644
+index 00000000..b15e9011
+--- /dev/null
++++ b/src/vs/workbench/browser/parts/titlebar/furnaceTutorial.ts
+@@ -0,0 +1,229 @@
++/*---------------------------------------------------------------------------------------------
++ *  Furnace product patch (patches/furnace-tutorial.patch): the Furnace menu (Begin Tutorial,
++ *  Help) and the tutorial overlay. The Furnace extension drives the tutorial: it calls
++ *  furnace.tutorial.welcome and furnace.tutorial.point, which draw a card or a bubble pointing
++ *  at a part of the window and resolve with the user's choice; furnace.tutorial.hide removes it.
++ *  Steps inside Furnace's own panels are drawn by those panels (webviews are separate documents).
++ *--------------------------------------------------------------------------------------------*/
++
++import { $, append, addDisposableListener, getWindow } from '../../../../base/browser/dom.js';
++import { DisposableStore } from '../../../../base/common/lifecycle.js';
++import { localize, localize2 } from '../../../../nls.js';
++import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
++import { CommandsRegistry, ICommandService } from '../../../../platform/commands/common/commands.js';
++import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
++import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
++
++const MenubarFurnaceMenu = new MenuId('MenubarFurnaceMenu');
++
++MenuRegistry.appendMenuItem(MenuId.MenubarMainMenu, {
++	submenu: MenubarFurnaceMenu,
++	title: {
++		value: 'Furnace',
++		original: 'Furnace',
++		mnemonicTitle: localize({ key: 'mFurnace', comment: ['&& denotes a mnemonic'] }, "F&&urnace")
++	},
++	order: 7.5
++});
++
++// The menu entries run the Furnace extension's commands (activating it if needed).
++registerAction2(class BeginTutorialAction extends Action2 {
++	constructor() {
++		super({
++			id: 'furnace.menu.beginTutorial',
++			title: { ...localize2('beginTutorial', "Begin Tutorial"), mnemonicTitle: localize({ key: 'miBeginTutorial', comment: ['&& denotes a mnemonic'] }, "&&Begin Tutorial") },
++			menu: { id: MenubarFurnaceMenu, group: '1_learn', order: 1 }
++		});
++	}
++	run(accessor: ServicesAccessor): Promise<unknown> { return accessor.get(ICommandService).executeCommand('aiGui.tour'); }
++});
++
++registerAction2(class FurnaceHelpAction extends Action2 {
++	constructor() {
++		super({
++			id: 'furnace.menu.help',
++			title: { ...localize2('furnaceHelp', "Help"), mnemonicTitle: localize({ key: 'miFurnaceHelp', comment: ['&& denotes a mnemonic'] }, "&&Help") },
++			menu: { id: MenubarFurnaceMenu, group: '1_learn', order: 2 }
++		});
++	}
++	run(accessor: ServicesAccessor): Promise<unknown> { return accessor.get(ICommandService).executeCommand('aiGui.help'); }
++});
++
++type Choice = 'next' | 'back' | 'end' | 'replaced';
++interface PointStep { title: string; body: string; index: number; total: number; targets: string[]; menubar: boolean; last: boolean }
++interface WelcomeCard { title: string; body: string; start: string; later: string; dontShow: string }
++
++const text = (value: unknown, limit: number) => typeof value === 'string' ? value.slice(0, limit) : '';
++
++const styles = `
++.furnace-tutorial { position: absolute; inset: 0; z-index: 10000; pointer-events: none; font-size: 13px; }
++.furnace-tutorial-dim { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); }
++.furnace-tutorial-ring { position: absolute; border: 2px solid var(--vscode-focusBorder); border-radius: 7px; box-shadow: 0 0 0 4000px rgba(0, 0, 0, .45); transition: all .18s ease; }
++.furnace-tutorial-bubble, .furnace-tutorial-card { position: absolute; pointer-events: auto; box-sizing: border-box; color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
++	background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-focusBorder); border-radius: 10px; box-shadow: 0 10px 32px var(--vscode-widget-shadow); }
++.furnace-tutorial-bubble { width: 320px; padding: 14px 16px 12px; transition: left .18s ease, top .18s ease; }
++.furnace-tutorial-card { width: 440px; max-width: calc(100% - 32px); left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 22px 24px 18px; }
++.furnace-tutorial-arrow { position: absolute; width: 12px; height: 12px; background: inherit; border: inherit; border-width: 0 0 1px 1px; }
++.furnace-tutorial-count { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--vscode-descriptionForeground); }
++.furnace-tutorial h3 { margin: 4px 0 6px; font-size: 14px; font-weight: 600; }
++.furnace-tutorial h2 { margin: 0 0 10px; font-size: 18px; font-weight: 600; }
++.furnace-tutorial p { margin: 0 0 8px; line-height: 1.55; }
++.furnace-tutorial label { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; color: var(--vscode-descriptionForeground); cursor: pointer; }
++.furnace-tutorial-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
++.furnace-tutorial-actions .spacer { flex: 1; }
++.furnace-tutorial button { font: inherit; padding: 4px 12px; border-radius: 5px; cursor: pointer; border: 1px solid var(--vscode-button-border, transparent);
++	color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
++.furnace-tutorial button.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
++.furnace-tutorial button.link { background: none; border: none; padding: 4px 2px; color: var(--vscode-descriptionForeground); }
++.furnace-tutorial button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
++`;
++
++/** Text with paragraphs (blank lines) and **bold**, built as DOM nodes (never HTML). */
++function renderText(parent: HTMLElement, value: string) {
++	for (const paragraph of value.split(/\n{2,}/)) {
++		const p = append(parent, $('p'));
++		paragraph.split(/(\*\*[^*]+\*\*)/).forEach(part => {
++			if (part.startsWith('**') && part.endsWith('**') && part.length > 4) { append(p, $('b', undefined, part.slice(2, -2))); } else if (part) { p.appendChild(p.ownerDocument.createTextNode(part)); }
++		});
++	}
++}
++
++class TutorialOverlay {
++	private readonly disposables = new DisposableStore();
++	private root: HTMLElement | undefined;
++	private settle: ((value: unknown) => void) | undefined;
++
++	constructor(private readonly container: HTMLElement) { }
++
++	clear(result: unknown = 'replaced'): void {
++		this.disposables.clear();
++		this.root?.remove(); this.root = undefined;
++		const settle = this.settle; this.settle = undefined; settle?.(result);
++	}
++
++	private open(settle: (value: unknown) => void): HTMLElement {
++		this.clear();
++		this.settle = settle;
++		this.root = append(this.container, $('.furnace-tutorial'));
++		append(this.root, $('style')).textContent = styles;
++		return this.root;
++	}
++
++	private finish(result: unknown): void { const settle = this.settle; this.settle = undefined; this.clear(); settle?.(result); }
++
++	private button(parent: HTMLElement, label: string, className: string, onClick: () => void): HTMLButtonElement {
++		const button = append(parent, $<HTMLButtonElement>(`button.${className}`, { type: 'button' }, label));
++		this.disposables.add(addDisposableListener(button, 'click', onClick));
++		return button;
++	}
++
++	welcome(card: WelcomeCard): Promise<{ choice: 'start' | 'later'; dontShow: boolean }> {
++		return new Promise(resolve => {
++			const root = this.open(value => resolve(value as { choice: 'start' | 'later'; dontShow: boolean }));
++			append(root, $('.furnace-tutorial-dim')).style.pointerEvents = 'auto';
++			const box = append(root, $('.furnace-tutorial-card', { role: 'dialog', 'aria-modal': 'true', 'aria-label': card.title }));
++			append(box, $('h2', undefined, card.title));
++			renderText(box, card.body);
++			const label = append(box, $('label'));
++			const check = append(label, $<HTMLInputElement>('input', { type: 'checkbox' }));
++			label.appendChild(label.ownerDocument.createTextNode(card.dontShow));
++			const actions = append(box, $('.furnace-tutorial-actions'));
++			append(actions, $('span.spacer'));
++			const later = () => this.finish({ choice: 'later', dontShow: check.checked });
++			this.button(actions, card.later, 'secondary', later);
++			const start = this.button(actions, card.start, 'primary', () => this.finish({ choice: 'start', dontShow: check.checked }));
++			this.disposables.add(addDisposableListener(box, 'keydown', (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); later(); } }));
++			start.focus();
++		});
++	}
++
++	point(step: PointStep): Promise<Choice> {
++		return new Promise(resolve => {
++			const root = this.open(value => resolve(value as Choice));
++			const dim = append(root, $('.furnace-tutorial-dim'));
++			const ring = append(root, $('.furnace-tutorial-ring'));
++			const bubble = append(root, $('.furnace-tutorial-bubble', { role: 'dialog', 'aria-label': step.title }));
++			const arrow = append(bubble, $('.furnace-tutorial-arrow'));
++			append(bubble, $('.furnace-tutorial-count', undefined, localize('tutorialCount', "{0} of {1}", step.index + 1, step.total)));
++			append(bubble, $('h3', undefined, step.title));
++			renderText(bubble, step.body);
++			const actions = append(bubble, $('.furnace-tutorial-actions'));
++			this.button(actions, localize('tutorialEnd', "End Tutorial"), 'link', () => this.finish('end'));
++			append(actions, $('span.spacer'));
++			if (step.index > 0) { this.button(actions, localize('tutorialBack', "Back"), 'secondary', () => this.finish('back')); }
++			const next = this.button(actions, step.last ? localize('tutorialFinish', "Finish") : localize('tutorialNext', "Next"), 'primary', () => this.finish(step.last ? 'end' : 'next'));
++			this.disposables.add(addDisposableListener(bubble, 'keydown', (e: KeyboardEvent) => {
++				if (e.key === 'ArrowRight') { e.preventDefault(); this.finish(step.last ? 'end' : 'next'); }
++				if (e.key === 'ArrowLeft' && step.index > 0) { e.preventDefault(); this.finish('back'); }
++			}));
++			const win = getWindow(this.container);
++			this.disposables.add(addDisposableListener(win, 'keydown', (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); this.finish('end'); } }, true));
++			const place = () => this.place(step, dim, ring, bubble, arrow);
++			place();
++			// Parts move as views open and animate; follow the target until the step ends.
++			const timer = win.setInterval(place, 250);
++			this.disposables.add({ dispose: () => win.clearInterval(timer) });
++			this.disposables.add(addDisposableListener(win, 'resize', place));
++			next.focus();
++		});
++	}
++
++	private target(step: PointStep): { left: number; top: number; width: number; height: number } | undefined {
++		const frame = this.container.getBoundingClientRect();
++		if (step.menubar) { return { left: 48, top: -2, width: 0, height: 0 }; } // The native menu bar sits just above the window.
++		for (const selector of step.targets) {
++			let elements: NodeListOf<HTMLElement>;
++			try { elements = this.container.querySelectorAll<HTMLElement>(selector); } catch { continue; }
++			for (const element of elements) {
++				if (this.root?.contains(element)) { continue; }
++				const rect = element.getBoundingClientRect();
++				if (rect.width > 0 && rect.height > 0 && getWindow(element).getComputedStyle(element).visibility !== 'hidden') {
++					return { left: rect.left - frame.left, top: rect.top - frame.top, width: rect.width, height: rect.height };
++				}
++			}
++		}
++		return undefined;
++	}
++
++	private place(step: PointStep, dim: HTMLElement, ring: HTMLElement, bubble: HTMLElement, arrow: HTMLElement): void {
++		const width = this.container.clientWidth, height = this.container.clientHeight, gap = 14, margin = 8;
++		const bw = bubble.offsetWidth, bh = bubble.offsetHeight, rect = this.target(step);
++		bubble.dataset.target = rect ? 'found' : 'none';
++		const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
++		if (!rect) {
++			dim.style.display = ''; ring.style.display = 'none'; arrow.style.display = 'none';
++			bubble.style.left = `${(width - bw) / 2}px`; bubble.style.top = `${(height - bh) / 2}px`;
++			return;
++		}
++		dim.style.display = 'none'; arrow.style.display = '';
++		ring.style.display = rect.width ? '' : 'none';
++		const pad = 3;
++		Object.assign(ring.style, { left: `${rect.left - pad}px`, top: `${rect.top - pad}px`, width: `${rect.width + pad * 2}px`, height: `${rect.height + pad * 2}px` });
++		const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
++		let left: number, top: number, side: 'left' | 'right' | 'top' | 'bottom';
++		if (rect.left + rect.width + gap + bw + margin <= width) { side = 'left'; left = rect.left + rect.width + gap; top = clamp(cy - bh / 2, margin, height - bh - margin); }
++		else if (rect.left - gap - bw - margin >= 0) { side = 'right'; left = rect.left - gap - bw; top = clamp(cy - bh / 2, margin, height - bh - margin); }
++		else if (rect.top + rect.height + gap + bh + margin <= height) { side = 'top'; top = rect.top + rect.height + gap; left = clamp(cx - bw / 2, margin, width - bw - margin); }
++		else if (rect.top - gap - bh - margin >= 0) { side = 'bottom'; top = rect.top - gap - bh; left = clamp(cx - bw / 2, margin, width - bw - margin); }
++		else { side = 'left'; left = clamp(rect.left + 24, margin, width - bw - margin); top = clamp(rect.top + 24, margin, height - bh - margin); arrow.style.display = 'none'; }
++		bubble.style.left = `${left}px`; bubble.style.top = `${top}px`;
++		// The arrow sits on the bubble's edge facing the target, pointing at its centre.
++		const rotate = { left: 45, top: 135, right: 225, bottom: 315 }[side];
++		Object.assign(arrow.style, side === 'left' || side === 'right'
++			? { [side]: '-7px', top: `${clamp(cy - top - 6, 12, bh - 24)}px`, bottom: '', right: side === 'left' ? '' : '-7px', left: side === 'left' ? '-7px' : '' }
++			: { [side]: '-7px', left: `${clamp(cx - left - 6, 12, bw - 24)}px`, right: '', bottom: side === 'top' ? '' : '-7px', top: side === 'top' ? '-7px' : '' });
++		arrow.style.transform = `rotate(${rotate}deg)`;
++	}
++}
++
++let overlay: TutorialOverlay | undefined;
++const getOverlay = (accessor: ServicesAccessor) => overlay ??= new TutorialOverlay(accessor.get(ILayoutService).mainContainer);
++
++CommandsRegistry.registerCommand('furnace.tutorial.welcome', (accessor, card?: Partial<WelcomeCard>) => getOverlay(accessor).welcome({
++	title: text(card?.title, 200), body: text(card?.body, 2000), start: text(card?.start, 60) || 'Start', later: text(card?.later, 60) || 'Not Now', dontShow: text(card?.dontShow, 120)
++}));
++CommandsRegistry.registerCommand('furnace.tutorial.point', (accessor, step?: Partial<PointStep>) => getOverlay(accessor).point({
++	title: text(step?.title, 200), body: text(step?.body, 2000), index: Number(step?.index) || 0, total: Number(step?.total) || 1,
++	targets: Array.isArray(step?.targets) ? step.targets.slice(0, 8).map(item => text(item, 300)).filter(Boolean) : [], menubar: step?.menubar === true, last: step?.last === true
++}));
++CommandsRegistry.registerCommand('furnace.tutorial.hide', accessor => { getOverlay(accessor).clear('end'); });
