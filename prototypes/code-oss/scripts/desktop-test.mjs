@@ -6,7 +6,7 @@ import path from 'node:path';
 import { root } from './environment.mjs';
 import { launchOptions } from './launch.mjs';
 
-export async function desktopTest(name, { discover = false } = {}) {
+export async function desktopTest(name, { discover = false, welcome = false } = {}) {
     // Desktop suites load .cache/product, so build it first: a stale bundle once made a suite
     // test old code. AI_GUI_TEST_SKIP_BUILD=1 reuses the existing build.
     if (!process.env.AI_GUI_TEST_SKIP_BUILD) execFileSync(process.execPath, [path.join(root, 'scripts/build-product.mjs')], { stdio: 'inherit' });
@@ -26,6 +26,8 @@ export async function desktopTest(name, { discover = false } = {}) {
             await writeFile(settings, JSON.stringify({ 'window.zoomLevel': 0 }), { flag: 'wx' }).catch(error => { if (error.code !== 'EEXIST') throw error; });
             const options = await launchOptions(profile);
             if (!discover) options.env.AI_GUI_TEST_NO_DISCOVERY = '1';
+            // The tutorial's welcome card would cover the window; only the shell suite checks it.
+            if (!welcome) options.env.AI_GUI_TEST_NO_WELCOME = '1';
             options.args.push('--ozone-platform=x11', ...extraArgs);
             if (folder) options.args.push(folder);
             const start = Date.now();

@@ -17,6 +17,11 @@ export async function listModels(): Promise<string[]> {
 
 /** What a local model can do ("vision", "tools", "thinking" …), from Ollama's model details; null when unknown. */
 export async function capabilities(model: string): Promise<string[] | null> {
+  return (await showModel(model))?.capabilities ?? null;
+}
+
+/** Ollama's details for a model: capabilities, parameter size (e.g. "14.8B") and family; null when unknown. */
+export async function showModel(model: string): Promise<{ capabilities: string[] | null; size?: string; family?: string } | null> {
   try {
     const response = await fetch(`${OLLAMA_URL}/api/show`, {
       method: "POST",
@@ -25,8 +30,12 @@ export async function capabilities(model: string): Promise<string[] | null> {
       signal: AbortSignal.timeout(2500),
     });
     if (!response.ok) return null;
-    const data = (await response.json()) as { capabilities?: unknown };
-    return Array.isArray(data.capabilities) ? data.capabilities.filter((item): item is string => typeof item === "string") : null;
+    const data = (await response.json()) as { capabilities?: unknown; details?: { parameter_size?: unknown; family?: unknown } };
+    const text = (value: unknown) => typeof value === "string" && value.length <= 40 ? value : undefined;
+    return {
+      capabilities: Array.isArray(data.capabilities) ? data.capabilities.filter((item): item is string => typeof item === "string") : null,
+      size: text(data.details?.parameter_size), family: text(data.details?.family),
+    };
   } catch {
     return null;
   }
@@ -53,6 +62,7 @@ export async function chat(
     mode?: AgentMode;
     permission?: "ask" | "auto" | "full";
     environment?: string;
+    autocompute?: string;
     images?: ImageInput[];
   },
   signal: AbortSignal,
@@ -61,7 +71,7 @@ export async function chat(
 ) {
   const mode = request.mode ?? "discuss";
   const messages: ModelMessage[] = [
-    { role: "system", content: agentInstructions(mode, request.permission, request.environment) },
+    { role: "system", content: agentInstructions(mode, request.permission, request.environment, request.autocompute) },
     ...chatHistory(request.messages, request.context),
     ...(request.images?.length ? [{ role: "user", content: imageLabel, images: request.images.map(image => image.data) }] : []),
   ];

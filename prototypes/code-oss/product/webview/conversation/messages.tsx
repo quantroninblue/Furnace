@@ -5,6 +5,7 @@ import { post } from "../store";
 import { Icon } from "../icons";
 import { Steps, duration, useNow } from "./steps";
 import { Changes } from "./changes";
+import { Delegated } from "./autocompute";
 
 const proposalLabel = { file: "File change", plan: "Plan", command: "Command", browse: "Page", verify: "Check this yourself" } as const;
 const approveLabel = { file: "Review Changes", plan: "Apply Plan", command: "Run Proposed Command", browse: "Open Page", verify: "It Works" } as const;
@@ -28,6 +29,8 @@ function liveState(message: ChatMessage) {
   if (message.phase === "condensing") return "CONDENSING CONTEXT";
   const steps = message.steps || [];
   if (steps.some(step => step.status === "waiting")) return "WAITING FOR YOU";
+  const task = message.autocompute?.tasks.find(item => item.state === "running" || item.state === "checking");
+  if (task) return task.state === "checking" ? "CHECKING LOCAL WORK" : `LOCAL · ${task.model.slice(task.model.indexOf("/") + 1)}`;
   if (steps.some(step => step.status === "running")) return "WORKING";
   return message.content ? "WRITING" : message.reasoning ? "REASONING" : "THINKING";
 }
@@ -91,6 +94,7 @@ const Message = memo(function Message({ message, models, busy, latest, condensed
         {message.cwd && user && <small className="muted">{message.cwd}</small>}
         {!user && message.reasoning ? <Reasoning text={message.reasoning} thinking={live && !message.content} /> : null}
         {message.steps?.length ? <Steps steps={message.steps} finished={!live} startedAt={message.startedAt} endedAt={message.endedAt} /> : null}
+        {message.autocompute?.tasks.length ? <Delegated message={message} /> : null}
         {message.unbacked === "retrying" && <p className="unbacked-note" role="status">Tasks were marked done, but no file changed and no command ran. Asked the model to do the work.</p>}
         {message.unbacked === "unresolved" && <p className="unbacked-note warning" role="alert">⚠ Tasks were marked done, but this reply changed no files and ran no commands. Check the project before trusting it.</p>}
         {message.content || !message.state

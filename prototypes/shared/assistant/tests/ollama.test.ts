@@ -1,6 +1,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { capabilities, chat, listModels } from "../main/ollama";
+import { capabilities, chat, listModels, showModel } from "../main/ollama";
+import { agentInstructions } from "../main/agent-context";
 import type { ChatEvent } from "../shared/types";
 import { createAgentTools } from "../main/agent-tools";
 import { testContext } from "./tool-context";
@@ -118,7 +119,7 @@ test("Ollama refusals keep their reason, and model capabilities are read from /a
   const fetchMock = mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
     if (String(url).endsWith("/api/show")) {
       const model = JSON.parse(String(options.body)).model;
-      return model === "missing" ? new Response("not found", { status: 404 }) : Response.json({ capabilities: model === "qwen3-vl" ? ["completion", "vision", "tools"] : ["completion", "tools"] });
+      return model === "missing" ? new Response("not found", { status: 404 }) : Response.json({ capabilities: model === "qwen3-vl" ? ["completion", "vision", "tools"] : ["completion", "tools"], details: { parameter_size: "8.2B", family: "qwen3" } });
     }
     return new Response('{"error":"registry.ollama.ai/library/qwen3:8b does not support images"}', { status: 400 });
   });
@@ -131,7 +132,16 @@ test("Ollama refusals keep their reason, and model capabilities are read from /a
     assert.deepEqual(await capabilities("qwen3-vl"), ["completion", "vision", "tools"]);
     assert.deepEqual(await capabilities("qwen3:8b"), ["completion", "tools"]);
     assert.equal(await capabilities("missing"), null);
+    assert.deepEqual(await showModel("qwen3:8b"), { capabilities: ["completion", "tools"], size: "8.2B", family: "qwen3" });
   } finally {
     fetchMock.mock.restore();
   }
+});
+
+test("Autocompute adds the local models' profile to Build instructions only", () => {
+  const profile = "- ollama/qwen3:8b (8.2B parameters). Record: edit untested.";
+  const build = agentInstructions("build", "auto", "", profile);
+  assert.match(build, /Autocompute is on\. You are the lead agent[\s\S]*delegating is the default[\s\S]*- ollama\/qwen3:8b \(8\.2B parameters\)[\s\S]*assessed once[\s\S]*assess_local_models[\s\S]*medium −15, hard −35[\s\S]*smallest \(fastest\) model whose confidence reaches 50[\s\S]*review_task[\s\S]*if you delegated nothing, say why/);
+  assert.doesNotMatch(agentInstructions("build", "auto", ""), /Autocompute/);
+  assert.doesNotMatch(agentInstructions("plan", "auto", "", profile), /Autocompute/);
 });

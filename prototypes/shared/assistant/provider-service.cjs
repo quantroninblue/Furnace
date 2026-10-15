@@ -21,7 +21,8 @@ class ProviderService {
     async discover() {
         this.catalog.clear(); this.connections = [];
         const add = (provider, models) => { for (const model of models) this.catalog.set(`${provider}/${model.id}`, { id: `${provider}/${model.id}`, name: `${provider}: ${model.name}`,
-            ...(typeof model.vision === 'boolean' ? { vision: model.vision } : {}), ...(typeof model.tools === 'boolean' ? { tools: model.tools } : {}) }); };
+            ...(typeof model.vision === 'boolean' ? { vision: model.vision } : {}), ...(typeof model.tools === 'boolean' ? { tools: model.tools } : {}),
+            ...(model.size ? { size: model.size } : {}), ...(model.family ? { family: model.family } : {}) }); };
         for (const provider of ['openai', 'anthropic']) {
             const key = this.keys.get(provider);
             try { if (key) add(provider, await this.remote.remoteModels(provider, key.key)); this.connections.push({ provider, connected: !!key, storage: key?.storage || 'none' }); }
@@ -29,8 +30,11 @@ class ProviderService {
         }
         try {
             // Local models differ in what they accept, so Furnace can say so before Ollama refuses.
-            const names = await this.ollama.listModels(), known = await Promise.all(names.map(id => this.ollama.capabilities?.(id) ?? null));
-            add('ollama', names.map((id, index) => ({ id, name: id, ...(known[index] ? { vision: known[index].includes('vision'), tools: known[index].includes('tools') } : {}) })));
+            // Size and family tell Autocompute's lead model how much a local model can take on.
+            const names = await this.ollama.listModels();
+            const known = await Promise.all(names.map(async id => this.ollama.showModel ? await this.ollama.showModel(id) : { capabilities: await this.ollama.capabilities?.(id) ?? null }));
+            add('ollama', names.map((id, index) => { const info = known[index], list = info?.capabilities;
+                return { id, name: id, ...(list ? { vision: list.includes('vision'), tools: list.includes('tools'), abilities: list.slice(0, 12) } : {}), ...(info?.size ? { size: info.size } : {}), ...(info?.family ? { family: info.family } : {}) }; }));
             this.connections.push({ provider: 'ollama', connected: true });
         }
         catch { this.connections.push({ provider: 'ollama', connected: false, error: 'Start Ollama separately, then refresh. No model is downloaded automatically.' }); }
@@ -100,7 +104,7 @@ class ProviderService {
         if (!this.catalog.has(request.model)) throw new Error('Choose an available model in Connections; refresh to reconnect.');
         if (!request || !['discuss', 'plan', 'build', 'research'].includes(request.mode) || !Array.isArray(request.messages)
             || request.messages.some(m => !['user', 'assistant'].includes(m.role) || typeof m.content !== 'string') || typeof request.context !== 'string'
-            || (request.permission !== undefined && !['ask', 'auto', 'full'].includes(request.permission)) || (request.environment !== undefined && (typeof request.environment !== 'string' || request.environment.length > 1000)) || (request.images !== undefined && !validImages(request.images))) throw new Error('Invalid assistant request.');
+            || (request.permission !== undefined && !['ask', 'auto', 'full'].includes(request.permission)) || (request.environment !== undefined && (typeof request.environment !== 'string' || request.environment.length > 1000)) || (request.autocompute !== undefined && (typeof request.autocompute !== 'string' || request.autocompute.length > 4000)) || (request.images !== undefined && !validImages(request.images))) throw new Error('Invalid assistant request.');
         this.running++;
         const slash = request.model.indexOf('/'); const provider = request.model.slice(0, slash);
         request = { ...request, model: request.model.slice(slash + 1) };
