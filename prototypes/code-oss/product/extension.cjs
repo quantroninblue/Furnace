@@ -18,6 +18,8 @@ const { createBackground } = require('./background-tasks.cjs');
 const { createInlineEdits } = require('./inline-edit.cjs');
 const { createHistoryActions } = require('./history-actions.cjs');
 const { createClaudeSignIn } = require('./claude-signin.cjs');
+const { createTutorial } = require('./tutorial.cjs');
+const { createThemes } = require('./theme-manager.cjs');
 let activeResearch, activeConversation;
 exports.deactivate = async () => { await activeConversation?.dispose(); await activeResearch?.dispose(); };
 const { ProductSession, ProductReview, modes } = require('../../shared/product-core.cjs');
@@ -38,7 +40,7 @@ exports.activate = async context => {
     let lastStatus = '';
     let saveQueue = Promise.resolve();
     const scope = () => vscode.workspace.workspaceFolders?.map(folder => folder.name).join(', ') || 'No project needed';
-    let conversation, files, scm, background, inline, agentFilesKey = '';
+    let conversation, files, scm, background, inline, themes, agentFilesKey = '';
     // Status bar mirrors the original app's connection indicator; it opens Connections.
     const indicator = vscode.window.createStatusBarItem('aiGui.model', vscode.StatusBarAlignment.Left, 100);
     indicator.name = 'Furnace Model'; indicator.command = 'aiGui.connections'; indicator.show();
@@ -48,10 +50,6 @@ exports.activate = async context => {
         indicator.text = model ? `$(circle-filled) ${model.name}` : chat?.connections.models?.length ? '$(circle-outline) Choose a model' : '$(plug) Connect a model';
         indicator.tooltip = model ? `Active model: ${model.name}. Click to manage connections.` : 'Open Furnace connections';
     };
-    // First-run tutorial progress (global, survives restarts). The first agent reply
-    // with tool steps completes the "first task" step.
-    let tour = { dismissed: false, seen: {}, ...context.globalState.get('tour') };
-    const updateTour = changes => { tour = { ...tour, ...changes, seen: { ...tour.seen, ...changes.seen } }; void context.globalState.update('tour', tour); };
     // The model last chosen in each mode is selected again when switching to that mode.
     const modeModels = { ...context.globalState.get('modeModels') };
     // Context keys drive keyboard shortcuts (approve/deny/stop only when they apply).
@@ -63,17 +61,19 @@ exports.activate = async context => {
     function flush() {
         flushTimer = undefined;
         const chat = conversation?.snapshot(); showIndicator(chat);
-        if (!tour.seen.task && chat?.messages.some(message => message.role === 'assistant' && message.steps?.length && message.state === 'complete')) updateTour({ seen: { task: true } });
         setKey('aiGui.busy', !!chat?.busy); setKey('aiGui.approvalPending', !!conversation?.approvals.size);
         scm?.update();
         const { messages = [], ...meta } = chat || {};
-        const base = { type: 'state', state: session.snapshot(), scope: scope(), review: reviews.state(), research: research.snapshot(), chat: chat ? meta : null, status: lastStatus, tour, modeModels, background: background?.list() || [] };
+        // Agent glow (Themes → Agent Glow): working, waiting for an approval, or an error.
+        const glow = !themes?.glow() ? 'off' : conversation?.approvals.size ? 'waiting' : chat?.busy ? 'working' : chat?.error ? 'error' : 'idle';
+        const base = { type: 'state', state: session.snapshot(), scope: scope(), review: reviews.state(), research: research.snapshot(), chat: chat ? meta : null, status: lastStatus, modeModels, background: background?.list() || [], glow };
         // Files the agent changed get Keep / Revert lenses in their editors.
         const filesKey = conversation ? `${conversation.data.id}:${conversation.agentFiles().map(file => `${file.path}@${file.messageId}`).join('|')}` : '';
         if (filesKey !== agentFilesKey) { agentFilesKey = filesKey; void inline?.refreshAgentFiles(); }
         const serialized = new Map();
         const json = message => { if (!serialized.has(message.id)) serialized.set(message.id, JSON.stringify(message)); return serialized.get(message.id); };
         for (const [webview, view] of views) {
+            if (view.surface === 'help' || view.surface === 'themes') continue;
             if (view.surface !== 'conversation') { void webview.postMessage(base); continue; }
             const sent = new Map(), upsert = [];
             for (const message of messages) { sent.set(message.id, json(message)); if (view.reset || view.sent.get(message.id) !== sent.get(message.id)) upsert.push(message); }
@@ -189,13 +189,24 @@ exports.activate = async context => {
         if (preferred && preferred !== conversation.data.model && !conversation.turn && conversation.connections.models.some(model => model.id === preferred)) conversation.selectModel(preferred);
     };
     const setMode = mode => { session.update('mode', mode); selectModeModel(mode); save(); broadcast(); };
+    // The interactive tutorial (Furnace → Begin Tutorial, /tour, the welcome card on startup).
+    const tutorial = createTutorial({ vscode, context, views, getMode: () => session.state.mode, setMode, showHome, log });
+    context.subscriptions.push({ dispose: () => tutorial.stop() });
+    // Themes (the Themes menu, patches/themes-menu.patch): this window's look and Furnace's panels.
+    themes = createThemes({ context, views, root, status, log, attach: (...args) => attach(...args) });
     const startTurn = async (send) => {
         if (['Build', 'Plan'].includes(session.state.mode) && root() && !vscode.workspace.isTrusted) await requestTrust();
         await send();
     };
     // Every webview message is validated here; webview/protocol.ts lists them.
     const handlers = {
-        ready: (_message, view) => { view.reset = true; broadcast(); },
+        ready: async (_message, view) => {
+            view.ready = true;
+            themes.sendTo(view.webview);
+            if (view.surface === 'themes') return themes.handlers.themeReady();
+            if (view.surface === 'help') { void view.webview.postMessage({ type: 'help', docs: await helpDocs(), section: view.section }); return; }
+            view.reset = true; broadcast();
+        },
         mode: message => setMode(message.value),
         draft: message => { session.update('draft', message.value); save(); broadcast(); },
         brief: message => { session.update('brief', message.value); save(); broadcast(); },
@@ -235,6 +246,8 @@ exports.activate = async context => {
         },
         approveProposal: message => conversation.approve(message.id),
         approval: message => conversation.decide(message.id, message.decision),
+        autocompute: message => { if (typeof message.enabled !== 'boolean') throw new Error('Invalid Autocompute setting.'); return conversation.setAutocompute(message.enabled); },
+        autocomputeReset: async () => { await conversation.resetAutocompute(); status('Local model records cleared: each model can take every kind of task again until it earns a new record.'); },
         permission: async message => {
             if (!['ask', 'auto', 'full'].includes(message.value)) throw new Error('Unknown permission mode.');
             if (message.value === 'full' && await vscode.window.showWarningMessage('Give the agent full access?', { modal: true, detail: 'The agent will edit and delete files anywhere and run commands without asking or a sandbox. Use only for projects you trust and tasks you supervise.' }, 'Allow Full Access') !== 'Allow Full Access') { broadcast(); return; }
@@ -269,17 +282,18 @@ exports.activate = async context => {
         spendRefresh: async (_message, view) => { void view.webview.postMessage({ type: 'spend', spend: await provider.spend() }); },
         inlineEdit: () => inline.start(),
         trustFolder: () => requestTrust(),
-        tour: message => { if (message.action === 'ack' && ['permissions', 'review'].includes(message.step)) updateTour({ seen: { [message.step]: true } }); broadcast(); },
-        tourDismiss: () => { updateTour({ dismissed: true }); broadcast(); },
-        tourShow: () => showTour(),
-        tourExample: async () => {
-            session.update('mode', 'Build'); session.update('draft', 'Create a file named hello.txt that says "Hello from Furnace", then list the files in the project.'); save(); broadcast();
-            await vscode.commands.executeCommand('aiGui.conversation.focus');
-            status('Example ready in the message box. Press Enter to send it.');
+        tutorial: () => { void tutorial.begin().catch(error => status(error.message)); },
+        tutorialAction: message => tutorial.action(message),
+        help: () => showHelp(),
+        openLink: message => {
+            const url = vscode.Uri.parse(text(message.url, 2000));
+            if (!['https', 'http'].includes(url.scheme)) throw new Error('Only web links open from Help.');
+            return vscode.env.openExternal(url);
         },
         focusConversation: () => vscode.commands.executeCommand('aiGui.conversation.focus'),
         textSmaller: () => textSize('textSmaller'), textLarger: () => textSize('textLarger'), textReset: () => textSize('textReset'),
         ...historyHandlers,
+        ...themes.handlers,
         ...diffViews.handlers,
         ...background.handlers,
         copy: async message => { await vscode.env.clipboard.writeText(text(message.text, 1000000)); },
@@ -313,8 +327,8 @@ exports.activate = async context => {
         if (message.generation !== reviews.generation) throw new Error('Review expired. Use the current review controls.');
         await vscode.commands.executeCommand(command);
     }
-    function attach(webview, surface, disposables) {
-        webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')] };
+    function attach(webview, surface, disposables, roots = []) {
+        webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media'), ...roots] };
         const view = { surface, webview, sent: new Map(), reset: true };
         views.set(webview, view);
         disposables.push({ dispose: () => views.delete(webview) });
@@ -359,7 +373,20 @@ exports.activate = async context => {
             view.onDidDispose(() => { for (const disposable of disposables) disposable.dispose(); });
         }
     }, { webviewOptions: { retainContextWhenHidden: true } }));
-    async function showTour() { updateTour({ dismissed: false }); await showHome('start'); }
+    // Furnace Help: the user guide and data usage page that ship with the app, in the editor area.
+    let helpPanel;
+    async function helpDocs() {
+        const read = name => fs.readFile(vscode.Uri.joinPath(context.extensionUri, 'help', name).fsPath, 'utf8').catch(() => '');
+        return [{ id: 'guide', title: 'User Guide', markdown: await read('guide.md') }, { id: 'data', title: 'Data and Privacy', markdown: await read('data.md') }];
+    }
+    async function showHelp() {
+        if (helpPanel) { helpPanel.reveal(); return; }
+        helpPanel = vscode.window.createWebviewPanel('aiGui.help', 'Furnace Help', vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
+        helpPanel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'workspace.svg');
+        const disposables = [];
+        attach(helpPanel.webview, 'help', disposables);
+        helpPanel.onDidDispose(() => { for (const disposable of disposables) disposable.dispose(); helpPanel = undefined; });
+    }
     // Whole-window zoom: the workbench has no general UI font size setting.
     async function textSize(action) {
         const config = vscode.workspace.getConfiguration('window'), current = Number(config.get('zoomLevel')) || 0;
@@ -372,7 +399,8 @@ exports.activate = async context => {
         if (!conversation.connecting) { conversation.connections = await provider.status(); broadcast(); }
     }
     context.subscriptions.push(vscode.commands.registerCommand('aiGui.home', () => showHome()));
-    context.subscriptions.push(vscode.commands.registerCommand('aiGui.tour', () => showTour().catch(error => status(error.message))));
+    context.subscriptions.push(vscode.commands.registerCommand('aiGui.tour', () => tutorial.begin().catch(error => status(error.message))));
+    context.subscriptions.push(vscode.commands.registerCommand('aiGui.help', () => showHelp().catch(error => status(error.message))));
     context.subscriptions.push(vscode.commands.registerCommand('aiGui.connections', () => showConnections().catch(error => status(error.message))));
     const command = (name, action) => context.subscriptions.push(vscode.commands.registerCommand(name, async (...args) => {
         try { return await action(...args); } catch (error) { log('error', `${name}: ${error.message}`); status(error.message); throw error; }
@@ -423,14 +451,19 @@ exports.activate = async context => {
     context.subscriptions.push(vscode.commands.registerCommand('aiGui.openResearch', async () => { setMode('Research'); await showHome('research'); }));
     context.subscriptions.push({ dispose: () => { clearTimeout(flushTimer); } });
     if (vscode.workspace.getConfiguration('aiGui').get('openOnStartup')) {
-        // First run without a project: show the getting-started page (it opens one). With a
-        // project the side bar keeps Explorer (or whatever the user opens), and the empty chat
-        // links to the tour; afterwards keep the layout the user left.
-        if (!tour.dismissed && !vscode.workspace.workspaceFolders?.length) void revealHome(true);
+        // First run without a project: show the Start page (it opens one). With a project the
+        // side bar keeps Explorer (or whatever the user opens); afterwards keep the layout the user left.
+        if (!context.globalState.get('tutorial') && !vscode.workspace.workspaceFolders?.length) void revealHome(true);
         else void vscode.commands.executeCommand('aiGui.conversation.focus');
+    }
+    // Offer the tutorial once the window has settled (desktop tests opt in with { welcome: true }).
+    if (!process.env.AI_GUI_TEST_NO_WELCOME) {
+        const timer = setTimeout(() => { void tutorial.welcome().catch(error => log('warn', `Tutorial: ${error.message}`)); }, 1500);
+        context.subscriptions.push({ dispose: () => clearTimeout(timer) });
     }
     // Daily update check, only when this build names a feed (package.json "updates.feed").
     if (!process.env.AI_GUI_TEST_NO_DISCOVERY) { const timer = setTimeout(() => { void support.checkForUpdates(false).catch(() => {}); }, 30000); context.subscriptions.push({ dispose: () => clearTimeout(timer) }); }
+    void themes.start().catch(error => log('warn', `Themes: ${error.message}`));
     log('info', `Activated (Code OSS ${vscode.version}).`);
-    return { session, reviews, research, conversation, documents, showHome, status, connectionsReady, scm, terminals, background: background.tasks, inline, support, save: async () => { await saveQueue; await conversation.save(); } };
+    return { session, reviews, research, conversation, documents, showHome, status, connectionsReady, scm, terminals, background: background.tasks, inline, support, themes, save: async () => { await saveQueue; await conversation.save(); } };
 };

@@ -17,12 +17,14 @@ const { ContextMethods, parseMentions } = require('./conversation/context.cjs');
 const { HistoryMethods } = require('./conversation/history.cjs');
 const { SpendMethods } = require('./conversation/spend.cjs');
 const { ReviewMethods } = require('./conversation/review.cjs');
+const { AutocomputeMethods } = require('./conversation/autocompute.cjs');
+const { AutocomputeStore } = require('./main/autocompute.ts');
 const { SpendLedger } = require('./main/spend.ts');
 // Shown reasoning keeps its newest part, so long local-model thinking can't bloat the session.
 const REASONING_MAX = 60000;
 // Small models sometimes tick their whole checklist after only thinking about the work. A Build
 // reply that marks tasks completed but changed no file and ran no command is sent back once.
-const WORK_TOOLS = new Set(['run_command', 'verify_step']);
+const WORK_TOOLS = new Set(['run_command', 'verify_step', 'delegate_task']);
 const completedTodos = reply => (reply.steps || []).findLast(step => step.tool === 'todo_write' && step.status === 'done')?.todos?.filter(item => item.status === 'completed').length || 0;
 const unbacked = (reply, changes) => completedTodos(reply) > 0 && !changes.files.size && !(reply.steps || []).some(step => WORK_TOOLS.has(step.tool) && step.status === 'done');
 const doTheWork = count => `You marked ${count} task${count === 1 ? '' : 's'} completed, but nothing has been done yet: no file was created or changed and no command ran in this reply. Marking a task completed does not do the work, and the user sees only the files you write and the commands you run. Do the work now with your tools: create or edit the files (write_file, edit_file), then run a command that checks them (run_command or verify_step), and update the checklist as each step is really done. If this request truly needed no file changes or commands, say so in one sentence instead.`;
@@ -41,6 +43,7 @@ class Conversation {
         this.audit = new AuditLog(path.join(directory, 'audit'));
         this.spend = new SpendLedger(path.join(directory, 'settings', 'spend.json')); void this.spend.load().then(() => this.changed());
         this.limits = {};
+        this.autocompute = new AutocomputeStore(path.join(directory, 'settings', 'autocompute.json')); void this.autocompute.load().then(() => this.changed());
         this.processes = new BackgroundProcesses(adapter.terminals || null, () => this.changed(), (info, event) => this.log({ event: 'process', tool: 'run_command', title: `${event === 'started' ? 'Started' : event === 'stopped' ? 'Stopped' : 'Exited'} background process: ${info.command}`, status: event, detail: info.exitCode === null ? info.cwd : `exit ${info.exitCode}` }));
     }
     busy() { return !!(this.turn || this.command || this.switching || this.connecting || this.checking); }
@@ -55,7 +58,7 @@ class Conversation {
             usage: this.usage(), queue: this.queued.map(({ id, text }) => ({ id, text })), queuePaused: this.queuePaused,
             images: this.images.map(({ data, ...image }) => image), processes: this.processes.list(), rules: this.rules.list(this.adapter.root()),
             planSteps: this.planSteps(), checking: this.checking || null, untrusted: this.untrustedLabels(),
-            cost: this.costSummary(), spend: this.spend.summary(), budget: this.adapter.budget?.() || 0, limits: this.limits };
+            cost: this.costSummary(), spend: this.spend.summary(), budget: this.adapter.budget?.() || 0, limits: this.limits, autocompute: this.autocomputeState() };
     }
     save() {
         this.data.plan = this.session.state.brief;
@@ -113,6 +116,7 @@ class Conversation {
         const shortName = model.name.slice(model.name.indexOf(':') + 1).trim() || model.id;
         if (this.images.length && model.vision === false) throw new Error(`${shortName} can't see images. Remove the image, or choose a model that supports images (for example a vision model such as qwen3-vl).`);
         if (this.mode() !== 'discuss' && model.tools === false) throw new Error(`${shortName} doesn't support tool calling, which ${this.mode()} mode needs. Choose a model that does, or switch to Discuss.`);
+        const autocompute = this.autocomputeActive(this.mode());
         const epoch = this.epoch, controller = new AbortController(), turn = this.turn = { controller };
         this.changed();
         let context;
@@ -146,9 +150,10 @@ class Conversation {
             reply.changes = files.length ? { files } : undefined;
             checkpointTimer ??= setTimeout(persistChanges, 1000); this.changed();
         });
-        const tools = createAgentTools(mode, host && recordingHost(host, changes), {
+        // by: the local model a delegated task runs on (Autocompute); its steps are labelled with it.
+        const makeTools = by => createAgentTools(mode, host && recordingHost(host, changes), {
             permission, signal: controller.signal,
-            report: step => this.reportStep(reply, step, epoch, permission),
+            report: step => this.reportStep(reply, by ? { ...step, by } : step, epoch, permission),
             approve: (step, files) => this.requestApproval(step, files, epoch, controller.signal),
             policy: { deniedPath: relative => this.rules.deniesPath(root, relative)?.pattern ?? null, deniedCommand: command => this.rules.deniesCommand(root, command)?.pattern ?? null },
             terminals: this.adapter.terminals || null, processes: this.processes,
@@ -165,10 +170,17 @@ class Conversation {
                 proposal.id ||= randomUUID(); proposal.status = 'pending';
                 this.proposals.set(proposal.id, proposal); reply.proposals.push(proposal); this.changed();
             },
+            // verify_step proves brief steps in Build mode; a manual check becomes an It Works / It Doesn't card.
+            verify: mode === 'build' ? { brief: () => this.session.state.brief, record: (step, evidence) => this.recordEvidence(step.key, evidence),
+                confirm: (step, text) => { if (epoch !== this.epoch) return; const proposal = { id: randomUUID(), kind: 'verify', key: step.key, text, reason: step.text, status: 'pending' }; this.proposals.set(proposal.id, proposal); reply.proposals.push(proposal); this.changed(); } } : undefined,
         });
-        const guarded = { definitions: tools.definitions, execute: async (name, args) => {
+        const tools = makeTools();
+        const environment = (this.adapter.environment?.() || '').slice(0, 1000);
+        // Autocompute: the lead model also gets local_models, delegate_task and review_task (only with file tools: a trusted project).
+        const lead = autocompute && tools.definitions.some(tool => tool.function.name === 'write_file') ? this.orchestration(reply, { makeTools, run: (name, args) => tools.execute(name, args), changes, signal: controller.signal, epoch, request: { permission, environment } }) : null;
+        const guarded = { definitions: lead ? [...tools.definitions, ...lead.definitions] : tools.definitions, execute: async (name, args) => {
             controller.signal.throwIfAborted(); if (epoch !== this.epoch) throw new Error('Conversation changed.');
-            return tools.execute(name, args);
+            return lead?.has(name) ? lead.execute(name, args) : tools.execute(name, args);
         } };
         this.changed();
         turn.done = (async () => {
@@ -179,7 +191,7 @@ class Conversation {
                 controller.signal.throwIfAborted();
                 const messages = await this.prepareHistory(reply, context.text, controller.signal, epoch);
                 controller.signal.throwIfAborted();
-                const request = { id: reply.id, model: this.data.model, mode, permission, environment: (this.adapter.environment?.() || '').slice(0, 1000), messages, context: context.text };
+                const request = { id: reply.id, model: this.data.model, mode, permission, environment, messages, context: context.text, ...(lead ? { autocompute: this.autocomputeProfile() } : {}) };
                 const onEvent = event => {
                     if (epoch !== this.epoch || controller.signal.aborted) return;
                     if (event.delta) reply.content += event.delta;
@@ -201,6 +213,7 @@ class Conversation {
             } catch (error) { reply.state = controller.signal.aborted ? 'stopped' : 'failed'; reply.error = controller.signal.aborted ? 'Reply stopped.' : error.message; this.error = reply.error; if (/service disconnected|service timed out/.test(error.message)) this.connections = { models: [], connections: [], error: 'Assistant service stopped. Refresh Connections to reconnect.' }; }
             finally {
                 clearInterval(checkpoint); reply.endedAt = Date.now(); reply.phase = undefined;
+                if (lead) this.finishAutocompute(reply);
                 if (reply.unbacked === 'retrying') reply.unbacked = undefined;
                 this.settleCost(reply);
                 const citations = this.citationsIn(reply.content); if (citations.length) reply.citations = citations;
@@ -402,6 +415,6 @@ function displayPath(root) {
     return file => base && (file === base || file.startsWith(base + path.sep)) ? path.relative(base, file) || '.' : file;
 }
 // Method groups kept in their own files (context and condensing; history and going back).
-for (const group of [ContextMethods, HistoryMethods, SpendMethods, ReviewMethods])
+for (const group of [ContextMethods, HistoryMethods, SpendMethods, ReviewMethods, AutocomputeMethods])
     for (const name of Object.getOwnPropertyNames(group.prototype)) if (name !== 'constructor') Object.defineProperty(Conversation.prototype, name, Object.getOwnPropertyDescriptor(group.prototype, name));
 module.exports = { Conversation, parseMentions };

@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit -p prototypes/shared/assistant/tsconfig.json && tsc --noEmit -p prototypes/code-oss/product/webview/tsconfig.json",
     "test:trust": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/trust-smoke.mjs",
     "test:debug": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/debug-smoke.mjs",
-    "test:webview": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/webview-smoke.mjs"
+    "test:webview": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/webview-smoke.mjs",
+    "test:themes": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/themes-smoke.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

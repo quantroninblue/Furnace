@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Mode } from "../protocol";
 import { Icon, type IconName } from "../icons";
 import { post, setHistoryOpen, setTimelineOpen, useStore } from "../store";
-import { tourSteps } from "../tour";
+import { TutorialLayer, demoMessages } from "../tutorial";
 import { Logo } from "../logo";
 import { Composer, modeNotes } from "./composer";
 import { TimelinePane } from "./timeline";
@@ -17,20 +17,20 @@ function Tool({ type, label, icon, title }: { type: "newChat"; label: string; ic
 }
 
 export function ConversationPanel() {
-  const data = useStore(value => value.data), messages = useStore(value => value.messages), note = useStore(value => value.note), historyOpen = useStore(value => value.historyOpen), timelineOpen = useStore(value => value.timelineOpen);
+  const data = useStore(value => value.data), messages = useStore(value => value.messages), note = useStore(value => value.note), historyOpen = useStore(value => value.historyOpen), timelineOpen = useStore(value => value.timelineOpen), demo = useStore(value => !!value.tutorial?.demo);
   const chat = data?.chat;
   // Model lists arrive with every update; keep one reference so message rows stay memoized.
   const modelsKey = JSON.stringify(chat?.connections.models || []);
   const models = useMemo(() => JSON.parse(modelsKey), [modelsKey]);
   if (!data || !chat) return <div className="conversation" />;
   const mode = data.state.mode;
-  const steps = tourSteps(data), done = steps.filter(step => step.done).length;
   return (
     <div className="conversation" onKeyDown={event => {
       if (event.key === "Escape" && chat.busy && !event.defaultPrevented && !historyOpen && !timelineOpen) post({ type: "stop" });
       // Alt+1…4 switch modes.
       if (event.altKey && !event.ctrlKey && !event.metaKey && /^Digit[1-4]$/.test(event.code)) { event.preventDefault(); post({ type: "mode", value: modes[Number(event.code.slice(5)) - 1] }); }
     }}>
+      {data.glow && data.glow !== "off" && <div id="agent-glow" className={`agent-glow ${data.glow}`} aria-hidden="true" />}
       <header className="conversation-head">
         <div className="conversation-title"><strong id="chat-title">{chat.title || "New conversation"}</strong>
           <span id="scope"><span id="mode-label" className="mode-label" title={`${modeNotes[mode]}. Choose Start, Plan, Build or Research in the Workspace view to change it (Alt+1…4, Ctrl+Alt+M).`}>{mode}</span>{data.scope}</span></div>
@@ -49,7 +49,10 @@ export function ConversationPanel() {
           </div>
         </div>
       )}
-      {historyOpen ? <HistoryPane /> : timelineOpen ? <TimelinePane busy={chat.busy} /> : (
+      {demo ? (
+        // The tutorial's sample reply: display only, its buttons do nothing.
+        <div className="tutorial-demo" inert><MessageList messages={demoMessages} models={models} busy={false} /></div>
+      ) : historyOpen ? <HistoryPane /> : timelineOpen ? <TimelinePane busy={chat.busy} /> : (
         <MessageList messages={messages} models={models} busy={chat.busy || chat.switching}>
           {!messages.length && (
             <div id="empty-chat" className="chat-empty">
@@ -61,7 +64,6 @@ export function ConversationPanel() {
                   <button key={text} onClick={() => { if (index === 2) post({ type: "context", field: "shareEditor", enabled: true }); post({ type: "draft", value: text }); }}>{text.slice(0, -1)}<Icon name="arrow" size={12} /></button>
                 ))}
               </div>
-              {!data.tour.dismissed && done < steps.length && <button id="tour-hint" className="connect-hint" onClick={() => post({ type: "tourShow" })}>Getting started · {done} of {steps.length} done →</button>}
               {!models.length && <button id="connect-hint" className="connect-hint" onClick={() => post({ type: "connections" })}><Icon name="plug" size={13} /> Connect a model to start</button>}
               <p className="empty-chat-note"><Icon name="shield" size={12} /> You choose the mode. You review the actions.</p>
             </div>
@@ -72,6 +74,7 @@ export function ConversationPanel() {
         <div id="status" role="status" className="status-line">{chat.compacting ? "Condensing earlier messages into a summary…" : note || chat.error || data.status}</div>
         <Composer chat={chat} research={data.research} mode={mode} draft={data.state.draft} />
       </div>
+      <TutorialLayer />
     </div>
   );
 }
