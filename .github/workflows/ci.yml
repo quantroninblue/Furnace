@@ -43,8 +43,10 @@ jobs:
         run: npm test
 
   test-windows:
-    # Unit tests on Windows too: Windows builds only run them after a long packaging job.
+    # Unit tests on Windows for the windows branch (where Windows support lives): the Windows
+    # build only runs them after a long packaging job.
     name: Tests (Windows)
+    if: github.base_ref == 'windows' || github.ref_name == 'windows'
     runs-on: windows-latest
     timeout-minutes: 20
 
