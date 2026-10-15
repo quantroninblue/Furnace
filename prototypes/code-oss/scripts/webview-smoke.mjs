@@ -1,6 +1,6 @@
 import { _electron as electron } from '../../../node_modules/playwright-core/index.mjs';
 import { expect } from '../../../node_modules/@playwright/test/index.mjs';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launchOptions } from './launch.mjs';
@@ -16,7 +16,7 @@ let app, failure;
 
 async function open(surface, width) {
     const file = path.join(artifacts, `${surface}.html`);
-    await writeFile(file, `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src file:; script-src 'nonce-test';">
+    await writeFile(file, `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src file:; font-src file:; img-src file:; script-src 'nonce-test';">
 <link rel="stylesheet" href="${pathToFileURL(path.join(media, 'workspace.css'))}"></head><body data-surface="${surface}"><div id="root"></div>
 <script nonce="test">window.posted = []; let saved; window.acquireVsCodeApi = () => ({ postMessage: message => window.posted.push(message), getState: () => saved, setState: value => { saved = value; } });</script>
 <script nonce="test" src="${pathToFileURL(path.join(media, `${surface}.js`))}"></script></body></html>`);
@@ -71,7 +71,7 @@ const chat = { id: 'chat-1', title: 'Add input validation', model: 'openai/gpt-f
     compacting: false, shareSelection: false, shareDiff: false, shareProblems: false, contextInfo: { editor: 1200, selection: { label: 'app.ts:3–9', chars: 240 }, problems: { count: 2, errors: 1, chars: 300 }, diff: null },
     usage: { used: 130000, window: 200000, system: 4000, history: 120000, shared: 6000, condensed: 1, measured: { input: 128000, output: 900 } }, queue: [], queuePaused: false, images: [], processes: [], rules: [],
     planSteps: [], checking: null, untrusted: [], cost: null, spend: null, budget: 0, limits: {} };
-const state = (overrides = {}) => ({ type: 'state', state: { mode: 'Build', draft: '', brief: '' }, scope: 'demo', status: '', tour: { dismissed: false, seen: {} }, modeModels: {},
+const state = (overrides = {}) => ({ type: 'state', state: { mode: 'Build', draft: '', brief: '' }, scope: 'demo', status: '', modeModels: {},
     review: { pending: false, busy: false, generation: 1 }, research: { sources: [], opened: false, busy: false, loading: false, url: '', title: '', error: '' }, chat, ...overrides });
 
 try {
@@ -131,6 +131,33 @@ try {
     expect(await page.locator('#message-a3 details.reasoning').evaluate(node => node.open)).toBe(false);
     await send(page, state({ messages: { reset: false, order: messages.map(m => m.id), upsert: [] } }));
     checks.push('a reply that ticked tasks without changing files shows a warning; finished reasoning is collapsed');
+    // Autocompute: the checkbox in Build mode, a live delegated task, and the finished task card.
+    const autoChat = { ...chat, busy: false, autocompute: { enabled: false, ready: true, reason: '', locals: ['ollama/qwen3:14b'] } };
+    await send(page, state({ chat: autoChat, messages: { reset: false, order: messages.map(m => m.id), upsert: [] } }));
+    await expect(page.locator('.autocompute-toggle')).toHaveAttribute('title', /Local models available: qwen3:14b\. Tick to turn it on/);
+    await page.locator('#autocompute').click(); // Controlled by the extension's state, so it stays unticked until that arrives.
+    expect(await posted(page, 'autocompute')).toEqual([{ type: 'autocompute', enabled: true, sessionId: 'chat-1' }]);
+    await send(page, state({ chat: { ...autoChat, autocompute: { enabled: true, ready: false, reason: 'No local model with tool calling is connected.', locals: [] } }, messages: { reset: false, order: messages.map(m => m.id), upsert: [] } }));
+    await expect(page.locator('.autocompute-toggle.warn')).toHaveAttribute('title', /can't run: No local model/);
+    const delegated = { id: 't1', title: 'Add parser tests', kind: 'test', model: 'ollama/qwen3:14b', instructions: 'Write tests for parse() in src/parse.ts.', files: ['src/parse.test.ts'], check: 'npm test', state: 'running', attempts: 1, summary: '', usage: { input: 900, output: 40 },
+      confidence: 80, scores: [{ model: 'ollama/qwen3:14b', confidence: 80, reason: '14B, small test' }, { model: 'ollama/qwen3:8b', confidence: 55, reason: 'smaller' }] };
+    const delegating = { id: 'a4', role: 'assistant', model: 'openai/gpt-fixture', state: 'streaming', content: '', startedAt: Date.now(), autocompute: { tasks: [delegated], usage: { input: 900, output: 40 } },
+        steps: [step('w1', 'write_file', 'Created src/parse.test.ts (+20 −0)', { status: 'running', by: 'ollama/qwen3:14b' })] };
+    await send(page, state({ chat: { ...autoChat, busy: true }, messages: { reset: false, order: [...messages.map(m => m.id), 'a4'], upsert: [delegating] } }));
+    await expect(page.locator('#message-a4 .live-state')).toContainText('LOCAL · qwen3:14b');
+    await expect(page.locator('#message-a4 .step .step-by')).toHaveText('qwen3:14b');
+    const finished = { ...delegating, state: 'complete', content: 'Done.', steps: [], autocompute: { tasks: [{ ...delegated, state: 'accepted', outcome: 'revised', attempts: 2, exitCode: 0, review: 'Covers the edge cases.', summary: 'Added 4 tests.' }], usage: { input: 1900, output: 80 } } };
+    await send(page, state({ chat: autoChat, messages: { reset: false, order: [...messages.map(m => m.id), 'a4'], upsert: [finished] } }));
+    const autoCard = page.locator('#message-a4 .autocompute');
+    await expect(autoCard.locator('.changes-head small')).toHaveText('1 of 1 accepted · 2.0k local tokens');
+    await expect(autoCard.locator('.auto-state')).toHaveText('accepted after revision');
+    await autoCard.locator('.auto-task > summary').click();
+    await expect(autoCard.locator('.auto-body')).toContainText('check passed: npm test');
+    await expect(autoCard.locator('.auto-body')).toContainText('Review: Covers the edge cases.');
+    await expect(autoCard.locator('.auto-task > summary .step-by')).toHaveText('qwen3:14b · 80%');
+    await expect(autoCard.locator('.auto-body')).toContainText('Confidence: qwen3:14b 80% (14B, small test) · qwen3:8b 55% (smaller)');
+    await send(page, state({ messages: { reset: false, order: messages.map(m => m.id), upsert: [] } }));
+    checks.push('Autocompute: checkbox posts its setting and warns when it cannot run; live state and steps name the local model; the card shows verdict, check and local tokens');
     // Incremental update: only the live reply is sent; the other rows keep their DOM nodes.
     await page.evaluate(() => { document.querySelectorAll('.message')[1].dataset.mark = 'kept'; });
     const updated = { ...messages[5], content: 'Deleting it **now**.', steps: [{ ...messages[5].steps[0], status: 'done' }] };
@@ -307,6 +334,39 @@ try {
     await expect(page.locator('#message-u9')).toBeInViewport();
     checks.push('timeline lists turns with files, verified badge and branches; Compare, open branch and jump-to-message');
     await page.screenshot({ path: path.join(artifacts, 'conversation-extras.png') });
+    // Tutorial (webview/tutorial.tsx): a step with the sample reply points at its changed files.
+    const tutorialStep = (id, extra) => ({ type: 'tutorial', step: { id, index: 14, total: 29, title: 'Review and revert', body: 'Every reply that changed files ends with **this list**.\n\nSecond paragraph.', last: false, ...extra } });
+    await send(page, tutorialStep('1-changes', { target: '#message-tutorial-reply [aria-label="Files changed in this reply"]', demo: true }));
+    const bubble = page.locator('.tutorial-bubble');
+    await expect(bubble).toHaveAttribute('data-target', 'found');
+    await expect(bubble.locator('.tutorial-count')).toHaveText('15 of 29');
+    await expect(bubble.locator('b')).toHaveText('this list');
+    await expect(bubble.locator('p')).toHaveCount(2);
+    await expect(page.locator('#message-tutorial-reply .autocompute')).toContainText('Unit tests for slugify');
+    await expect(page.locator('.tutorial-demo')).toHaveAttribute('inert', '');
+    await expect(page.locator('.tutorial-ring')).toBeVisible();
+    await bubble.getByRole('button', { name: 'Next' }).click();
+    expect((await posted(page, 'tutorialAction')).at(-1)).toMatchObject({ id: '1-changes', action: 'next' });
+    await bubble.getByRole('button', { name: 'Back' }).click();
+    expect((await posted(page, 'tutorialAction')).at(-1)).toMatchObject({ action: 'back' });
+    await page.keyboard.press('Escape');
+    expect((await posted(page, 'tutorialAction')).at(-1)).toMatchObject({ action: 'end' });
+    // A step can press a button first, as the user would: the Timeline button opens the pane.
+    const timelineRequests = (await posted(page, 'timeline')).length;
+    await send(page, tutorialStep('1-timeline', { target: '#timeline', press: '[aria-label="Timeline"]', panes: 'keep' }));
+    await expect(page.locator('#timeline')).toBeVisible();
+    await expect.poll(async () => (await posted(page, 'timeline')).length).toBeGreaterThan(timelineRequests);
+    await expect(page.locator('#message-tutorial-reply')).toHaveCount(0);
+    // A missing target centres the bubble; the last step says Finish.
+    await send(page, tutorialStep('1-last', { target: '#nothing-here', last: true }));
+    await expect(bubble).toHaveAttribute('data-target', 'none');
+    await expect(page.locator('#timeline')).toHaveCount(0);
+    await bubble.getByRole('button', { name: 'Finish' }).click();
+    expect((await posted(page, 'tutorialAction')).at(-1)).toMatchObject({ id: '1-last', action: 'end' });
+    await page.screenshot({ path: path.join(artifacts, 'tutorial-conversation.png') });
+    await send(page, { type: 'tutorial', step: null });
+    await expect(bubble).toHaveCount(0);
+    checks.push('tutorial in the chat: bubble on its target with the sample reply (inert), Next/Back/Escape/Finish post, pressing Timeline opens it, missing target centres');
     await app.close(); app = undefined;
 
     page = await open('home', 360);
@@ -314,12 +374,25 @@ try {
     await expect(page.getByRole('tab', { name: 'Build' })).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('tab', { name: 'Start' }).click();
     expect((await posted(page, 'mode')).at(-1)).toMatchObject({ value: 'Discuss' });
-    await expect(page.locator('.tour-step')).toHaveCount(7);
+    await expect(page.locator('#tour')).toHaveCount(0);
+    await page.locator('#learn').getByRole('button', { name: 'Begin Tutorial' }).click();
+    await page.locator('#learn').getByRole('button', { name: 'Help' }).click();
+    expect([(await posted(page, 'tutorial')).length, (await posted(page, 'help')).length]).toEqual([1, 1]);
     await expect(page.locator('.shortcuts div')).toHaveCount(10);
     await expect(page.locator('#privacy')).toContainText('no telemetry');
     await page.getByRole('button', { name: 'Send Feedback' }).click();
     expect(await posted(page, 'feedback')).toHaveLength(1);
-    checks.push('Start page sets Discuss, shows privacy notes, Send Feedback and Check for Updates');
+    checks.push('Start page sets Discuss, shows privacy notes, Begin Tutorial, Help, Send Feedback and Check for Updates');
+    // A tutorial step on the workspace page shows its page (without changing the mode) and points at it.
+    await send(page, { type: 'tutorial', step: { id: '2-plan', index: 19, total: 29, title: 'Plan', body: 'Checks prove steps.', target: '#brief', last: false, page: 'plan' } });
+    await expect(page.getByRole('tab', { name: 'Plan' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.tutorial-bubble')).toHaveAttribute('data-target', 'found');
+    await page.locator('.tutorial-bubble').getByRole('button', { name: 'Next' }).click();
+    expect((await posted(page, 'tutorialAction')).at(-1)).toMatchObject({ id: '2-plan', action: 'next' });
+    await send(page, { type: 'tutorial', step: null });
+    await expect(page.locator('.tutorial-bubble')).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Start' }).click();
+    checks.push('tutorial on the workspace page: the step shows its page and points at the brief');
     await send(page, { type: 'connections' });
     await page.getByRole('tab', { name: 'API keys', exact: true }).click();
     await page.getByLabel('API key', { exact: true }).fill('fixture-key');
@@ -386,7 +459,80 @@ try {
     await expect(page.getByRole('tab', { name: 'Research' })).toHaveAttribute('aria-selected', 'true');
     checks.push('workspace view pages: plan progress and Build from Plan; saved rules list/add/remove; activity log; switching mode shows its page');
     await page.screenshot({ path: path.join(artifacts, 'home.png') });
-    checks.push('workspace page: tour, Connections tabs and key entry (field cleared), brief editing');
+    checks.push('workspace page: Connections tabs and key entry (field cleared), brief editing');
+    await app.close(); app = undefined;
+    // Furnace Help: the bundled user guide and data usage page, split into sections, with search.
+    page = await open('help', 1000);
+    const guide = await readFile(path.join(root, '../../README.md'), 'utf8'), data = await readFile(path.join(root, '../../DATA_USAGE.md'), 'utf8');
+    await send(page, { type: 'help', docs: [{ id: 'guide', title: 'User Guide', markdown: guide }, { id: 'data', title: 'Data and Privacy', markdown: data }] });
+    const contents = page.locator('.help-contents button');
+    await expect(contents.first()).toHaveText('Overview');
+    await expect(contents).toContainText(['Set up', 'Connect a model', 'Working with the agent', 'Troubleshooting']);
+    await expect(page.locator('.help-section h2', { hasText: 'Contents' })).toHaveCount(0);
+    await expect(page.locator('.help-section pre').first()).not.toContainText('███');
+    await page.getByLabel('Search help').fill('autocompute reset');
+    await expect(page.locator('.help-section h2')).toHaveText(['Working with the agent', 'Commands and shortcuts']);
+    await page.getByLabel('Search help').fill('zzzz-nothing');
+    await expect(page.locator('#help-empty')).toBeVisible();
+    await page.getByLabel('Search help').fill('');
+    await page.locator('.help-section a', { hasText: 'DATA_USAGE.md' }).first().click();
+    await expect(page.getByRole('tab', { name: 'Data and Privacy' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.help-section h2').first()).toHaveText('Overview');
+    await page.locator('.help-section a[href^="https://open-vsx.org"]').first().click();
+    expect((await posted(page, 'openLink')).at(-1)).toMatchObject({ url: 'https://open-vsx.org' });
+    await page.getByRole('button', { name: 'Begin Tutorial' }).click();
+    expect(await posted(page, 'tutorial')).toHaveLength(1);
+    await page.screenshot({ path: path.join(artifacts, 'help.png') });
+    checks.push('Help: guide sections without title/logo/contents, search filters sections, document links switch, web links open outside, Begin Tutorial');
+    await app.close(); app = undefined;
+    // Themes: panel colour tokens, the see-through backdrop, the agent glow and Create a Custom Theme.
+    page = await open('conversation', 440);
+    await send(page, { ...state({ chat: idle }), glow: 'waiting' });
+    await expect(page.locator('#agent-glow')).toHaveClass(/waiting/);
+    const charcoalText = await page.evaluate(() => getComputedStyle(document.body).color);
+    await send(page, { type: 'theme', tokens: { text: '#2b2a27', panel: '#f2efe8', accent: '#b4561f', scheme: 'light' }, backdrop: true, glow: true });
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).color)).toBe('rgb(43, 42, 39)');
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+    await send(page, { ...state({ chat: idle }), glow: 'working' });
+    await expect(page.locator('#agent-glow')).toHaveClass(/working/);
+    await page.screenshot({ path: path.join(artifacts, 'themed-conversation.png') });
+    await send(page, { type: 'theme', tokens: null, backdrop: false, glow: false });
+    await send(page, { ...state({ chat: idle }), glow: 'off' });
+    await expect(page.locator('#agent-glow')).toHaveCount(0);
+    expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe(charcoalText);
+    expect(await page.evaluate(() => document.body.dataset.backdrop)).toBeUndefined();
+    checks.push('themes: panel tokens recolour the chat, backdrop makes it see-through, Charcoal restores; agent glow working/waiting/off');
+    await app.close(); app = undefined;
+    page = await open('themes', 1000);
+    const theme = { version: 1, id: 'new', name: 'My Theme', background: { kind: 'solid', color: '#101010', gradient: null, picture: null, dim: 'auto', glass: false, ember: 'off', emberIntensity: 0.4 },
+        font: { family: '' }, text: { main: '#dadada', muted: '#9c9c9c' }, code: 'charcoal', editor: { background: '#141414' }, accent: '#2a2a2a' };
+    const picture = pathToFileURL(path.join(media, 'backgrounds/night-sky.svg')).href;
+    await send(page, { type: 'themeEditor', theme, opacity: null, windowPart: true,
+        checks: [{ id: 'text', label: 'Text on the background', ratio: 12.7, need: 4.5, ok: true }, { id: 'accent', label: 'Accent (focus rings, links) on the background', ratio: 1.3, need: 3, ok: false }],
+        sources: [{ id: 'charcoal', name: 'Furnace Charcoal', preset: true }, { id: 'midnight', name: 'Midnight', preset: true }],
+        codes: [{ id: 'charcoal', name: 'Charcoal' }, { id: 'arctic', name: 'Arctic' }], fonts: { bundled: ['Inter', 'Nunito'], installed: ['DejaVu Sans'] },
+        pictures: [{ source: 'bundled', name: 'night-sky', label: 'Night Sky', url: picture }] });
+    await expect(page.locator('.theme-part h2')).toContainText(['Background', 'Font', 'Font Colour', 'Editor Font Colour', 'Editor Colour', 'Accent']);
+    await page.getByLabel('Accent colour', { exact: true }).fill('#ff8800');
+    expect((await posted(page, 'themeDraft')).at(-1).theme.accent).toBe('#ff8800');
+    await page.getByLabel('Use accent from another theme').selectOption('midnight');
+    expect((await posted(page, 'themeTake')).at(-1)).toMatchObject({ part: 'accent', from: 'midnight' });
+    await page.locator('[data-check="accent"]').getByRole('button', { name: 'Fix' }).click();
+    expect((await posted(page, 'themeFix')).at(-1)).toMatchObject({ id: 'accent' });
+    await page.getByRole('group', { name: 'Background kind' }).getByRole('button', { name: 'Picture' }).click();
+    expect((await posted(page, 'themeDraft')).at(-1).theme.background).toMatchObject({ kind: 'picture', picture: { source: 'bundled', name: 'night-sky' } });
+    await expect(page.getByRole('button', { name: 'Night Sky' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('Dim panels automatically')).toBeVisible();
+    await page.getByRole('group', { name: 'Ember effect' }).getByRole('button', { name: 'Sparks' }).click();
+    expect((await posted(page, 'themeDraft')).at(-1).theme.background.ember).toBe('sparks');
+    await page.locator('#theme-font').selectOption('Nunito');
+    await page.getByLabel('Name').fill('Night Coder');
+    await page.screenshot({ path: path.join(artifacts, 'theme-editor.png') });
+    await page.getByRole('button', { name: 'Save Theme' }).click();
+    expect((await posted(page, 'themeSave')).at(-1)).toMatchObject({ asNew: false, theme: { name: 'Night Coder', font: { family: 'Nunito' }, accent: '#ff8800' } });
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    expect(await posted(page, 'themeCancel')).toHaveLength(1);
+    checks.push('Create a Custom Theme: six parts, colour edits preview, Use from theme, Fix, picture backdrop with auto-dim, ember, font, Save and Cancel');
     expect(errors).toEqual([]);
     await writeFile(path.join(artifacts, 'result.json'), JSON.stringify({ checks }, null, 2));
     console.log(`PASS: React webview surfaces (${checks.length} checks).`);

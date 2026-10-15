@@ -7,7 +7,7 @@ import type { AgentMode, ChatEvent, ImageInput, Message, RemoteProvider } from "
 import type { AgentTools } from "./agent-tools";
 import { agentInstructions, chatHistory, imageLabel } from "./agent-context";
 
-export type ChatRequest = { id: string; model: string; mode?: AgentMode; permission?: "ask" | "auto" | "full"; environment?: string; messages: Message[]; context: string; images?: ImageInput[] };
+export type ChatRequest = { id: string; model: string; mode?: AgentMode; permission?: "ask" | "auto" | "full"; environment?: string; autocompute?: string; messages: Message[]; context: string; images?: ImageInput[] };
 export { providerError, providerName } from "./provider-errors";
 import { providerError } from "./provider-errors";
 import { textBlocks } from "./text-blocks";
@@ -53,7 +53,7 @@ export function readLimits(headers: Headers): Limits | null {
 export async function remoteCount(provider: RemoteProvider, key: string, request: ChatRequest, tools: AgentTools["definitions"], fetcher?: typeof fetch) {
   const client = clients(provider, key, fetcher);
   const history = chatHistory(request.messages, request.context);
-  const instructions = agentInstructions(request.mode ?? "discuss", request.permission, request.environment);
+  const instructions = agentInstructions(request.mode ?? "discuss", request.permission, request.environment, request.autocompute);
   const signal = AbortSignal.timeout(20000);
   try {
     if (client instanceof OpenAI) {
@@ -124,7 +124,7 @@ export async function remoteChat(provider: RemoteProvider, key: string, request:
   const client = clients(provider, key, fetcher, limits => emit({ id: request.id, limits }));
   const errorProvider = options.chatgpt ? "chatgpt" : provider;
   const history = chatHistory(request.messages, request.context);
-  const instructions = agentInstructions(request.mode ?? "discuss", request.permission, request.environment);
+  const instructions = agentInstructions(request.mode ?? "discuss", request.permission, request.environment, request.autocompute);
   let toolCount = 0, outputSize = 0;
   const blocks = textBlocks(text => {
     outputSize += text.length;

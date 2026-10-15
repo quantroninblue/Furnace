@@ -7,6 +7,7 @@ const path = require('node:path');
 const { ProductSession } = require('../product-core.cjs');
 const { ResearchSources } = require('../research-contract.cjs');
 const { Conversation, parseMentions } = require('./conversation.cjs');
+const { AutocomputeStore } = require('./main/autocompute.ts');
 
 async function fixture(t, run, extra = {}, options = {}) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workflow-'));
@@ -361,4 +362,145 @@ test('models that cannot see images or call tools are refused before sending; bi
     assert.equal(requests.length, 1);
     assert.deepEqual(chat.data.messages.at(-2).mentions.map(item => [item.kind, item.error]), [['skipped', 'PNG image, not text']]);
     assert.ok(!JSON.stringify(requests[0]).includes('\\u0000'));
+});
+
+test('Autocompute: the online model delegates a task to a local model with scoped tools, reviews it, and the record is kept', async t => {
+    const { root, host } = await project(t);
+    const seen = { lead: [], local: [] };
+    const check = `node -e "process.exit(require('fs').existsSync('math.test.js') ? 0 : 1)"`;
+    const chat = await fixture(t, async (request, tools, _signal, emit) => {
+        if (request.model.startsWith('ollama/')) {
+            seen.local.push({ request, names: tools.definitions.map(tool => tool.function.name) });
+            await tools.execute('write_file', { path: 'math.test.js', content: 'test\n' });
+            emit({ delta: 'Wrote math.test.js.', usage: { input: 900, output: 40 } });
+            return;
+        }
+        seen.lead.push({ request, names: tools.definitions.map(tool => tool.function.name) });
+        const task = { kind: 'test', difficulty: 'easy', title: 'Add a math test', instructions: 'Create math.test.js containing the word test.', files: ['math.test.js'], check, task_id: null, notes: null };
+        assert.match(request.autocompute, /ollama\/qwen3:14b \(14\.8B parameters, qwen3, abilities: completion, tools\)\. NOT ASSESSED yet/);
+        assert.match(request.autocompute, /ollama\/old:7b \(abilities not reported by this Ollama version, so tool calling is unproven\)\. NOT ASSESSED/);
+        await assert.rejects(tools.execute('delegate_task', task), /Assess ollama\/qwen3:14b, ollama\/old:7b first with assess_local_models/);
+        const scores = (model, value) => ({ model, edit: value, test: value, refactor: value - 30, docs: value + 5, other: value - 20, notes: 'from size' });
+        await assert.rejects(tools.execute('assess_local_models', { models: [{ ...scores('qwen3:14b', 80), test: 140 }] }), /test for ollama\/qwen3:14b must be a number from 0 to 100/);
+        assert.match(await tools.execute('assess_local_models', { models: [scores('qwen3:14b', 80)] }), /Still not assessed: ollama\/old:7b[\s\S]*qwen3:14b[\s\S]*Confidence for an easy task: edit 80, test 80, refactor 50, docs 85, other 60/);
+        await tools.execute('assess_local_models', { models: [scores('old:7b', 30)] });
+        await assert.rejects(tools.execute('delegate_task', { ...task, difficulty: 'hard' }), /hard test task \(best: ollama\/qwen3:14b at 45, needs 50\)/);
+        const result = await tools.execute('delegate_task', task);
+        assert.match(result, /Task t1 · attempt 1 · ollama\/qwen3:14b \(confidence 80; others: ollama\/old:7b 30\) · test[\s\S]*Wrote math\.test\.js[\s\S]*passed \(exit 0\)[\s\S]*\+test[\s\S]*review_task with task_id "t1"/);
+        await assert.rejects(tools.execute('delegate_task', { ...task, kind: 'edit', title: 'More', instructions: 'x', files: [], check: null }), /Finish task t1 first/);
+        assert.match(await tools.execute('review_task', { task_id: 't1', verdict: 'accept', notes: 'Good.' }), /Accepted/);
+        emit({ delta: 'Done: the local model added the test.', usage: { input: 2000, output: 100 } });
+    }, { root: () => root, toolHost: () => host, permission: () => 'full', trusted: () => true });
+    chat.connections.models.push({ id: 'ollama/qwen3:14b', name: 'ollama: qwen3:14b', tools: true, vision: false, abilities: ['completion', 'tools'], size: '14.8B', family: 'qwen3' },
+        { id: 'ollama/old:7b', name: 'ollama: old:7b' });
+    chat.session.update('mode', 'Build');
+    assert.equal(chat.snapshot().autocompute.ready, true);
+    await chat.setAutocompute(true);
+
+    await chat.send('add a test for math');
+    const lead = seen.lead[0];
+    assert.match(lead.request.autocompute, /ollama\/qwen3:14b/);
+    assert.ok(['local_models', 'assess_local_models', 'delegate_task', 'review_task', 'verify_step', 'write_file'].every(name => lead.names.includes(name)));
+    const local = seen.local[0];
+    assert.equal(local.request.mode, 'build'); assert.equal(local.request.context, ''); assert.equal(local.request.autocompute, undefined);
+    assert.equal(local.request.messages.length, 1, 'a fresh context with only the task');
+    assert.match(local.request.messages[0].content, /Task: Add a math test\nCreate math\.test\.js[\s\S]*Check that must pass: `node -e/);
+    assert.deepEqual(local.names.sort(), ['apply_patch', 'create_directory', 'edit_file', 'glob', 'grep', 'list_directory', 'read_file', 'run_command', 'write_file']);
+    const reply = chat.data.messages.at(-1);
+    assert.equal(reply.state, 'complete');
+    const [task] = reply.autocompute.tasks;
+    assert.equal(task.state, 'accepted'); assert.equal(task.outcome, 'first'); assert.equal(task.exitCode, 0);
+    assert.equal(task.model, 'ollama/qwen3:14b'); assert.equal(task.confidence, 80);
+    assert.equal(task.difficulty, 'easy');
+    assert.deepEqual(task.scores.map(score => [score.model, score.confidence, score.reason]), [['ollama/qwen3:14b', 80, 'assessed 80, untested'], ['ollama/old:7b', 30, 'assessed 30, untested']]);
+    assert.deepEqual(reply.autocompute.usage, { input: 900, output: 40 });
+    assert.deepEqual([reply.usage.input, reply.usage.output], [2000, 100], 'only the online model counts as the reply usage');
+    assert.equal(reply.steps.find(step => step.tool === 'write_file').by, 'ollama/qwen3:14b');
+    assert.deepEqual(reply.changes.files.map(file => file.path), ['math.test.js']);
+    assert.deepEqual(chat.autocompute.tally('ollama/qwen3:14b', 'test'), { tries: 1, accepted: 1, first: 1 });
+    // The setting and the record survive a restart.
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const reloaded = new AutocomputeStore(chat.autocompute.file); await reloaded.load();
+    assert.equal(reloaded.enabled, true); assert.deepEqual(reloaded.records['ollama/qwen3:14b'].test, ['first']);
+    // The assessment is kept, so the next turn needs no new check; the record moves the confidence.
+    const { confidence, modelFacts } = require('./main/autocompute.ts');
+    const qwen = chat.connections.models.find(model => model.id === 'ollama/qwen3:14b');
+    assert.equal(reloaded.assessment(qwen.id, modelFacts(qwen)).scores.test, 80);
+    assert.equal(confidence(reloaded, qwen, 'test'), 82, 'one accepted task: 0.9 × 80 + 0.1 × 100');
+    assert.equal(confidence(reloaded, qwen, 'test', 'medium'), 67);
+    assert.equal(reloaded.assessment(qwen.id, modelFacts({ ...qwen, size: '32B' })), null, 'a changed model must be assessed again');
+    assert.doesNotMatch(chat.autocomputeProfile(), /NOT ASSESSED/);
+    // The smallest model that is confident enough gets the task; bigger ones take what it can't.
+    const { chooseModel, parameters } = require('./main/autocompute.ts');
+    assert.deepEqual([parameters('8.2B'), parameters('500M'), parameters('')], [8.2, 0.5, Infinity]);
+    const small = { id: 'ollama/qwen3:8b', name: 'qwen3:8b', tools: true, abilities: ['completion', 'tools'], size: '8.2B', family: 'qwen3' };
+    const scored = (value, notes) => ({ facts: '', scores: { edit: value, test: value, refactor: value, docs: value, other: value }, notes, by: '', at: 0 });
+    await reloaded.assess(small.id, { ...scored(60, '8B'), facts: modelFacts(small) });
+    await reloaded.assess('ollama/old:7b', { ...scored(95, 'unknown size'), facts: modelFacts({ id: 'ollama/old:7b' }) });
+    const pool = [qwen, small, { id: 'ollama/old:7b', name: 'old:7b' }];
+    assert.equal(chooseModel(reloaded, pool, 'test', 'easy').model, 'ollama/qwen3:8b', 'smallest at or above 50, ahead of higher scores');
+    assert.equal(chooseModel(reloaded, pool, 'test', 'medium').model, 'ollama/qwen3:14b', '8B drops to 45, so the 14B takes it');
+    assert.equal(chooseModel(reloaded, pool, 'test', 'hard').model, 'ollama/old:7b', 'unknown size goes last, but still wins when only it is confident enough');
+});
+
+test('Autocompute: revisions go back to the same local model, failing checks cannot be accepted, and unproven kinds are refused', async t => {
+    const { root, host } = await project(t);
+    let attempt = 0;
+    const chat = await fixture(t, async (request, tools, _signal, emit) => {
+        if (request.model.startsWith('ollama/')) {
+            attempt++;
+            if (attempt === 1) { emit({ delta: 'I would add the function.' }); return; }
+            assert.match(request.messages[0].content, /Fix these points:\n- Actually write add\(\) in math\.js\.[\s\S]*Result of your earlier attempt:/);
+            await tools.execute('write_file', { path: 'math.js', content: 'exports.add = (a, b) => a + b;\n' });
+            return;
+        }
+        if (!/NOT ASSESSED/.test(request.autocompute)) assert.fail('expected an unassessed model');
+        await tools.execute('assess_local_models', { models: [{ model: 'qwen3:8b', edit: 70, test: 70, refactor: 40, docs: 75, other: 50, notes: '8B' }] });
+        const first = await tools.execute('delegate_task', { difficulty: 'easy', kind: 'edit', title: 'Add add()', instructions: 'Write add(a, b) in math.js.', files: ['math.js'], check: `node -e "process.exit(require('./math.js').add(2, 3) === 5 ? 0 : 1)"`, task_id: null, notes: null });
+        assert.match(first, /It changed no files in this attempt\.[\s\S]*FAILED \(exit 1\)/);
+        await assert.rejects(tools.execute('review_task', { task_id: 't1', verdict: 'accept', notes: '' }), /check did not pass/);
+        await tools.execute('review_task', { task_id: 't1', verdict: 'revise', notes: 'Actually write add() in math.js.' });
+        assert.match(await tools.execute('delegate_task', { difficulty: null, kind: 'edit', title: 'x', instructions: 'x', files: [], check: null, task_id: 't1', notes: null }), /attempt 2[\s\S]*passed \(exit 0\)/);
+        await tools.execute('review_task', { task_id: 't1', verdict: 'accept', notes: 'Works after revision.' });
+        await assert.rejects(tools.execute('delegate_task', { difficulty: 'easy', kind: 'test', title: 'Tests', instructions: 'x', files: ['a', 'b', 'c', 'd', 'e'], check: null, task_id: null, notes: null }), /No local model has proven it can do test tasks/);
+        await assert.rejects(tools.execute('delegate_task', { difficulty: 'easy', kind: 'docs', title: 'Docs', instructions: 'x', files: ['a', 'b', 'c', 'd', 'e'], check: null, task_id: null, notes: null }), /at most 4 files/);
+        await assert.rejects(tools.execute('assess_local_models', { models: [{ model: 'ollama/missing', edit: 1, test: 1, refactor: 1, docs: 1, other: 1, notes: '' }] }), /not a connected local model\. Available: ollama\/qwen3:8b/);
+        emit({ delta: 'Done.' });
+    }, { root: () => root, toolHost: () => host, permission: () => 'full', trusted: () => true });
+    chat.connections.models.push({ id: 'ollama/qwen3:8b', name: 'ollama: qwen3:8b', tools: true });
+    chat.session.update('mode', 'Build');
+    await chat.setAutocompute(true);
+    for (let i = 0; i < 3; i++) await chat.autocompute.record('ollama/qwen3:8b', 'test', 'takeover');
+    assert.match(chat.autocomputeProfile(), /test 0 of 3 accepted — NOT ALLOWED, do these yourself/);
+
+    await chat.send('add an add function');
+    const task = chat.data.messages.at(-1).autocompute.tasks[0];
+    assert.equal(task.state, 'accepted'); assert.equal(task.outcome, 'revised'); assert.equal(task.attempts, 2);
+    assert.deepEqual(chat.autocompute.tally('ollama/qwen3:8b', 'edit'), { tries: 1, accepted: 1, first: 0 });
+    assert.equal(await fs.readFile(path.join(root, 'math.js'), 'utf8'), 'exports.add = (a, b) => a + b;\n');
+
+    await chat.resetAutocompute();
+    assert.equal(chat.autocompute.allowed('ollama/qwen3:8b', 'test'), true, 'reset lets the model earn its tasks again');
+    assert.match(chat.autocomputeProfile(), /NOT ASSESSED/, 'reset also clears the assessment');
+    // Autocompute needs an online lead and a local model; otherwise sending explains why.
+    chat.connections.models.push({ id: 'ollama/lead', name: 'ollama: lead', tools: true }); chat.selectModel('ollama/lead');
+    await assert.rejects(chat.send('again'), /Autocompute is on, but a local model is selected: choose an online model/);
+    chat.connections.models = [{ id: 'fixture/model', name: 'Fixture' }]; chat.selectModel('fixture/model');
+    await assert.rejects(chat.send('again'), /no local model with tool calling is connected/);
+    await chat.setAutocompute(false);
+    chat.session.update('mode', 'Discuss');
+});
+
+test('Build turns offer verify_step: a passing check ticks the brief and keeps evidence', async t => {
+    const { root, host } = await project(t);
+    const chat = await fixture(t, async (_request, tools, _signal, emit) => {
+        assert.ok(tools.definitions.some(tool => tool.function.name === 'verify_step'));
+        assert.match(await tools.execute('verify_step', { step: 'Make it', command: null }), /Check passed \(exit 0\)/);
+        emit({ delta: 'Proved.' });
+    }, { root: () => root, toolHost: () => host, permission: () => 'full', trusted: () => true });
+    chat.session.update('mode', 'Build');
+    chat.session.update('brief', '- [ ] Make it (check: `node -e "0"`)');
+    await chat.send('build it');
+    assert.match(chat.session.state.brief, /^- \[x\] Make it/);
+    assert.equal(chat.planSteps()[0].evidence.status, 'passed');
 });

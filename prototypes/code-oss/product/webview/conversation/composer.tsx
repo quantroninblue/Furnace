@@ -31,6 +31,22 @@ function AgentState({ chat, mode }: { chat: ChatState; mode: Mode }) {
   return <span id="agent-state" className={`agent-state${chat.permission === "full" ? " full" : ""}`}>{content}</span>;
 }
 
+// Autocompute: the online model leads and delegates small tasks to local models.
+function Autocompute({ chat }: { chat: ChatState }) {
+  const state = chat.autocompute;
+  if (!state) return null;
+  const locals = state.locals.map(id => id.slice(id.indexOf("/") + 1)).join(", ");
+  const title = !state.enabled ? `Autocompute: your online model plans and reviews, and gives small tasks (tests, small edits, docs) to local Ollama models to save online usage. ${locals ? `Local models available: ${locals}.` : "No local model with tool calling is connected yet."} Tick to turn it on.`
+    : state.ready ? `Autocompute is on: your online model plans and reviews; small tasks go to ${locals}, within what each model has proven it can do.`
+    : `Autocompute is on, but can't run: ${state.reason}`;
+  return (
+    <label className={`autocompute-toggle${state.enabled ? state.ready ? " on" : " warn" : ""}`} title={title}>
+      <input id="autocompute" type="checkbox" checked={state.enabled} disabled={chat.busy} onChange={event => post({ type: "autocompute", enabled: event.target.checked })} />
+      Autocompute{state.enabled && !state.ready ? " ⚠" : ""}
+    </label>
+  );
+}
+
 const thousands = (value: number) => value >= 10000 ? `${Math.round(value / 1000)}k` : value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
 // How full the model's context window is for the next message (estimated), with what fills it.
 function ContextMeter({ usage, busy }: { usage: Usage; busy: boolean }) {
@@ -110,12 +126,15 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
     { name: "review", description: "Second opinion: another model reviews the last changes", run: () => { update(""); const reply = [...currentMessages()].reverse().find(message => message.changes?.files.some(file => !file.reverted)); if (reply) post({ type: "reviewChanges", messageId: reply.id }); else setNote("No agent changes to review yet."); } },
     simple("edit", "Inline edit: change the selected code in the editor", { type: "inlineEdit" }),
     simple("connections", "Connect ChatGPT, Claude, API keys or Ollama", { type: "connections" }),
+    { name: "autocompute", hint: "on|off|reset", description: "Let your online model delegate small Build tasks to local models (reset clears their records)", run: arg => { update(""); if (arg === "reset") post({ type: "autocomputeReset" }); else post({ type: "autocompute", enabled: arg === "on" ? true : arg === "off" ? false : !chat.autocompute?.enabled }); } },
     { name: "permissions", hint: "ask|auto|full", description: "Change what the agent may do without asking", run: arg => { update(""); if (arg === "ask" || arg === "auto" || arg === "full") post({ type: "permission", value: arg }); else document.getElementById("permission")?.focus(); } },
     simple("attach", "Import files as context", { type: "attach" }),
     simple("changes", "Show agent and Git changes in Source Control", { type: "openScm" }),
     simple("workspace", "Open the workspace view (plan, research, rules, activity)", { type: "home" }),
     simple("stop", "Stop the current reply or command", { type: "stop" }),
-    simple("tour", "Show the getting started guide", { type: "tourShow" }),
+    simple("tour", "Begin the interactive tutorial", { type: "tutorial" }),
+    simple("help", "Open Furnace Help", { type: "help" }),
+    { name: "theme", hint: "name|new", description: "Choose a theme, or create your own (also the Themes menu)", run: arg => { update(""); post({ type: "themeCommand", value: arg }); } },
     simple("keys", "Show and change keyboard shortcuts", { type: "keys" }),
     simple("diagnostics", "Copy diagnostics for a bug report", { type: "diagnostics" }),
     simple("feedback", "Send feedback about Furnace", { type: "feedback" }),
@@ -243,6 +262,7 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
             <option value="ask">Ask first</option><option value="auto">Auto</option><option value="full">Full access</option>
           </select>
         </label>
+        {mode === "Build" && <Autocompute chat={chat} />}
         <AgentState chat={chat} mode={mode} />
       </div>
       <div className="composer">

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { AuditEntry, ChatMessage, FromWebview, HistoryItem, Mode, OrgSpend, Page, PathItem, State, Timeline, ToWebview } from "./protocol";
+import type { AuditEntry, ChatMessage, FromWebview, HelpDoc, HistoryItem, Mode, OrgSpend, Page, PathItem, State, ThemeEditorState, Timeline, ToWebview, TutorialStep } from "./protocol";
 
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void; getState(): unknown; setState(state: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -28,10 +28,17 @@ type Snapshot = {
   timelineOpen: boolean;
   /** Organization spend read with admin keys (Connections → API keys). */
   orgSpend: OrgSpend | null;
+  /** The tutorial step this panel draws (null when the bubble is elsewhere or the tutorial ended). */
+  tutorial: TutorialStep | null;
+  /** Help page documents and the section to show. */
+  help: { docs: HelpDoc[]; section?: string } | null;
+  /** The Create a Custom Theme page's state (theme page only). */
+  themeEditor: ThemeEditorState | null;
 };
 const modePage: Record<Mode, Page> = { Discuss: "start", Plan: "plan", Build: "build", Research: "research" };
-let snapshot: Snapshot = { data: null, messages: [], prefs, note: "", page: "start", lastPage: "start", mentions: { query: "", items: [] }, history: null, historyOpen: false, audit: null, timeline: null, timelineOpen: false, orgSpend: null };
+let snapshot: Snapshot = { data: null, messages: [], prefs, note: "", page: "start", lastPage: "start", mentions: { query: "", items: [] }, history: null, historyOpen: false, audit: null, timeline: null, timelineOpen: false, orgSpend: null, tutorial: null, help: null, themeEditor: null };
 const byId = new Map<string, ChatMessage>();
+let tutorialPanes = false;
 const listeners = new Set<() => void>();
 const emit = (next: Partial<Snapshot>) => { snapshot = { ...snapshot, ...next }; for (const listener of listeners) listener(); };
 
@@ -54,6 +61,16 @@ export function choosePage(page: Page) {
   if (mode && mode !== snapshot.data?.state.mode) post({ type: "mode", value: mode });
 }
 
+// Theme tokens (product/theme-model.cjs panelTokens) override the stylesheet's Charcoal values.
+let themeTokens: string[] = [];
+function applyTheme(tokens: Record<string, string> | null, backdrop: boolean) {
+  const style = document.documentElement.style;
+  for (const name of themeTokens) style.removeProperty(`--${name}`);
+  themeTokens = [];
+  for (const [name, value] of Object.entries(tokens || {})) { if (/^[a-z-]{1,30}$/.test(name) && value) { style.setProperty(`--${name}`, value); themeTokens.push(name); } }
+  if (backdrop) document.body.dataset.backdrop = "1"; else delete document.body.dataset.backdrop;
+}
+
 window.addEventListener("message", ({ data }: MessageEvent<ToWebview>) => {
   if (data?.type === "connections") { setPage("connections"); return; }
   if (data?.type === "page") { setPage(data.page); return; }
@@ -64,11 +81,23 @@ window.addEventListener("message", ({ data }: MessageEvent<ToWebview>) => {
   if (data?.type === "mentions") { emit({ mentions: { query: data.query, items: data.items } }); return; }
   if (data?.type === "history") { emit({ history: { query: data.query, items: data.items, current: data.current } }); return; }
   if (data?.type === "audit") { emit({ audit: data.entries }); return; }
+  if (data?.type === "help") { emit({ help: { docs: data.docs, section: data.section } }); return; }
+  if (data?.type === "theme") { applyTheme(data.tokens, data.backdrop); return; }
+  if (data?.type === "themeEditor") { const { type: _type, ...editor } = data; emit({ themeEditor: editor }); return; }
+  if (data?.type === "tutorial") {
+    const step = data.step;
+    // Panes a step pressed open (Timeline, History) close again when the tutorial ends.
+    if (step?.press) tutorialPanes = true;
+    if (!step && tutorialPanes) { tutorialPanes = false; emit({ tutorial: null, historyOpen: false, history: null, timelineOpen: false }); return; }
+    // Steps that point at the message list close the History and Timeline panes first.
+    emit({ tutorial: step, ...(step && step.panes !== "keep" && !step.press ? { historyOpen: false, history: null, timelineOpen: false } : {}), ...(step?.page ? { page: step.page } : {}) });
+    return;
+  }
   if (data?.type !== "state") return;
   const { type: _type, messages: sync, ...state } = data;
   const next: Partial<Snapshot> = { data: state };
   // Switching mode shows that mode's page (unless Connections is open).
-  if (state.state.mode !== snapshot.data?.state.mode && snapshot.page !== "connections") next.page = modePage[state.state.mode];
+  if (state.state.mode !== snapshot.data?.state.mode && snapshot.page !== "connections" && !snapshot.tutorial?.page) next.page = modePage[state.state.mode];
   // A local note shows until the status or the chat error changes.
   if (state.status !== snapshot.data?.status || state.chat?.error !== snapshot.data?.chat?.error) next.note = "";
   if (sync) {

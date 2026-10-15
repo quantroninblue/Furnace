@@ -4,6 +4,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { definitionsSize, protectedPath, binaryFile } = require('../main/agent-tools.ts');
 const { agentInstructions, historyText } = require('../main/agent-context.ts');
+const { orchestrationTools } = require('../main/autocompute.ts');
 const { estimateTokens, replyReserve, CONDENSE_AT, KEEP_RECENT, COMPACT_MIN, summaryInstruction } = require('../main/context-window.ts');
 // Conversation context: what the next request contains, how full the model's window is,
 // and condensing older messages into a summary when it fills up.
@@ -12,7 +13,10 @@ class ContextMethods {
     systemTokens(mode = this.mode()) {
         this.definitionSizes ??= new Map();
         if (!this.definitionSizes.has(mode)) this.definitionSizes.set(mode, definitionsSize(mode));
-        return estimateTokens(agentInstructions(mode, this.adapter.permission?.() || 'ask', (this.adapter.environment?.() || '').slice(0, 1000))) + Math.ceil(this.definitionSizes.get(mode) / 4);
+        // With Autocompute, Build turns also carry the local models' profile and the delegation tools.
+        const delegating = mode === 'build' && this.autocompute?.enabled && this.autocomputeState().ready;
+        return estimateTokens(agentInstructions(mode, this.adapter.permission?.() || 'ask', (this.adapter.environment?.() || '').slice(0, 1000), delegating ? this.autocomputeProfile() : ''))
+            + Math.ceil((this.definitionSizes.get(mode) + (delegating ? JSON.stringify(orchestrationTools).length : 0)) / 4);
     }
     /**
      * Tokens for the next request: instructions and tools, conversation since the last summary,
