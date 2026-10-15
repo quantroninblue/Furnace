@@ -4,9 +4,13 @@ on:
   pull_request:
     branches:
       - main
+      - mac
+      - windows
   push:
     branches:
       - main
+      - mac
+      - windows
 
 permissions:
   contents: read
