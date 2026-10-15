@@ -5,6 +5,7 @@ const path = require('node:path');
 const { Sessions } = require('./main/sessions.ts');
 const { TurnChanges, recordingHost, Checkpoints } = require('./main/checkpoints.ts');
 const { createAgentTools } = require('./main/agent-tools.ts');
+const { slash } = require('./main/search.ts');
 const { runCommand } = require('./main/commands.ts');
 const { validImages } = require('./main/agent-context.ts');
 const { contextWindow } = require('./main/context-window.ts');
@@ -412,7 +413,7 @@ class Conversation {
 function displayPath(root) {
     let base = root || null;
     try { if (base) base = fs.realpathSync(base); } catch { /* Use the configured path. */ }
-    return file => base && (file === base || file.startsWith(base + path.sep)) ? path.relative(base, file) || '.' : file;
+    return file => base && (file === base || file.startsWith(base + path.sep)) ? slash(path.relative(base, file)) || '.' : file;
 }
 // Method groups kept in their own files (context and condensing; history and going back).
 for (const group of [ContextMethods, HistoryMethods, SpendMethods, ReviewMethods, AutocomputeMethods])

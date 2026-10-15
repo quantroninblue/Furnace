@@ -1,6 +1,8 @@
 'use strict';
 const vscode = require('vscode');
 const path = require('node:path');
+// Agent changes are keyed by project paths with "/" on every platform.
+const slash = file => file.split(path.sep).join('/');
 const fs = require('node:fs/promises');
 
 // The agent's changes in this conversation as a Source Control provider ("AI Agent"),
@@ -41,7 +43,7 @@ class AgentChanges {
         const uri = resource?.resourceUri ?? resource;
         if (!(uri instanceof vscode.Uri)) throw new Error('Choose a file in the AI Agent list.');
         const root = this.ide.root();
-        return root && uri.fsPath.startsWith(root + path.sep) ? path.relative(root, uri.fsPath) : uri.fsPath;
+        return root && uri.fsPath.startsWith(root + path.sep) ? slash(path.relative(root, uri.fsPath)) : uri.fsPath;
     }
     update() {
         const files = this.conversation.agentFiles();
