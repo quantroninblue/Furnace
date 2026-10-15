@@ -2,7 +2,8 @@
   "name": "ai-gui",
   "version": "0.1.0",
   "private": true,
-  "description": "Private Code OSS workspace and independent product core.",
+  "description": "Furnace: a desktop coding workspace built on Code OSS where you and an AI agent work on the same project.",
+  "license": "MIT",
   "scripts": {
     "build": "node prototypes/code-oss/scripts/build-product.mjs",
     "start": "node prototypes/code-oss/scripts/start.mjs",
@@ -16,7 +17,8 @@
     "typecheck": "tsc --noEmit -p prototypes/shared/assistant/tsconfig.json && tsc --noEmit -p prototypes/code-oss/product/webview/tsconfig.json",
     "test:trust": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/trust-smoke.mjs",
     "test:debug": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/debug-smoke.mjs",
-    "test:webview": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/webview-smoke.mjs"
+    "test:webview": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/webview-smoke.mjs",
+    "test:themes": "node prototypes/code-oss/scripts/test-display.mjs prototypes/code-oss/scripts/themes-smoke.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

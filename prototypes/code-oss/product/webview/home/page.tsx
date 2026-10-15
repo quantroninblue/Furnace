@@ -2,33 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { AuditEntry, BackgroundTask, ChatState, OrgSpend, Page, PlanStep, Rule, State } from "../protocol";
 import { Icon, type IconName } from "../icons";
 import { choosePage, closeConnections, post, setPrefs, useStore, useSyncedText } from "../store";
-import { tourSteps } from "../tour";
+import { TutorialLayer } from "../tutorial";
 import { Logo } from "../logo";
-
-function Tour({ data }: { data: State }) {
-  const steps = tourSteps(data), done = steps.filter(step => step.done).length, complete = done === steps.length;
-  const current = steps.findIndex(step => !step.done);
-  return (
-    <section id="tour" className="tour" aria-label="Getting started">
-      <div className="tour-head">
-        <div><div className="eyebrow">Getting started</div><h2 id="tour-title">{complete ? "You’re all set" : "Set up Furnace in a few steps"}</h2></div>
-        <div className="row"><span id="tour-progress" className="tour-progress">{done} of {steps.length}</span>
-          <button className="ghost small" id="tour-dismiss" onClick={() => post({ type: "tourDismiss" })}>{complete ? "Close" : "Skip tour"}</button></div>
-      </div>
-      <ol id="tour-steps" className="tour-steps">
-        {steps.map((step, index) => (
-          <li key={step.title} className={`tour-step ${step.done ? "done" : index === current ? "current" : "pending"}`}>
-            <div className="tour-step-head"><span className="tour-marker">{step.done ? "✓" : index + 1}</span><strong>{step.title}</strong></div>
-            {index === current && <>
-              <p>{step.text}</p>
-              {step.actions.length > 0 && <div className="row">{step.actions.map(([label, run, style]) => <button key={label} className={style} onClick={run}>{label}</button>)}</div>}
-            </>}
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
 
 type Tab = "chatgpt" | "claude" | "local" | "api";
 function ConnectionCard({ tab, icon, title, subtitle, state, ready, children }: { tab: Tab; icon: IconName; title: string; subtitle: string; state: string; ready: boolean; children: ReactNode }) {
@@ -385,7 +360,6 @@ export function HomePage() {
       <nav className="page-tabs" role="tablist" aria-label="Workspace pages">
         {pages.map(([id, label]) => <button key={id} role="tab" aria-selected={page === id} title={modeTitles[id]} onClick={() => id === "connections" ? post({ type: "connections" }) : choosePage(id)}>{label}</button>)}
       </nav>
-      {!data.tour.dismissed && page === "start" && <Tour data={data} />}
       {open && data.chat && <Connections chat={data.chat} />}
       <div id="workspace-pages" hidden={open}>
         {page === "start" && <section className="welcome">
@@ -397,6 +371,13 @@ export function HomePage() {
             <WelcomeCard icon="book" title="Think it through" detail="Shape a brief together" onClick={() => post({ type: "mode", value: "Plan" })} />
             <WelcomeCard icon="globe" title="Bring the context" detail="Research without losing place" onClick={() => post({ type: "mode", value: "Research" })} />
             <WelcomeCard icon="plug" title="Connect a model" detail="ChatGPT, Claude, API keys or Ollama" onClick={() => post({ type: "connections" })} />
+          </div>
+          <div id="learn" className="learn-card">
+            <div><strong>New to Furnace?</strong><span>The tutorial points out each part of Furnace and opens it for you, one step at a time. Help has the full guide.</span></div>
+            <div className="row">
+              <button className="primary" onClick={() => post({ type: "tutorial" })}>Begin Tutorial</button>
+              <button className="ghost" onClick={() => post({ type: "help" })}>Help</button>
+            </div>
           </div>
           <p className="footnote"><Icon name="shield" size={12} /> Built for collaboration. You keep the controls.</p>
           <h3 className="section-title">Keyboard shortcuts</h3>
@@ -446,6 +427,7 @@ export function HomePage() {
         {page === "activity" && <Activity />}
       </div>
       <div id="status" role="status" className="status-line">{data.chat?.error || data.status || note}</div>
+      <TutorialLayer />
     </main>
   );
 }

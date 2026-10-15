@@ -30,7 +30,7 @@ export async function claudeChat(file: string, directory: string, request: ChatR
     temp = await fs.mkdtemp(path.join(directory, "turn-"));
     const config = path.join(temp, "mcp.json"), instructions = path.join(temp, "instructions.txt");
     await fs.writeFile(config, JSON.stringify(bridge.config), { mode: 0o600 });
-    await fs.writeFile(instructions, agentInstructions(request.mode ?? "discuss", request.permission, request.environment), { mode: 0o600 });
+    await fs.writeFile(instructions, agentInstructions(request.mode ?? "discuss", request.permission, request.environment, request.autocompute), { mode: 0o600 });
     signal.throwIfAborted();
     await new Promise<void>((resolve, reject) => {
       const child = spawn(file, claudeArguments(request.model, config, instructions, tools, !!request.images?.length), { cwd: temp, detached: process.platform !== "win32", windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, MCP_TOOL_TIMEOUT: String(timeoutMs) } });

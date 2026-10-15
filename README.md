@@ -42,6 +42,7 @@ Details: [DATA_USAGE.md](DATA_USAGE.md).
 - [Working with the agent](#working-with-the-agent)
 - [Research](#research)
 - [Costs and usage](#costs-and-usage)
+- [Themes](#themes)
 - [Debugging and extensions](#debugging-and-extensions)
 - [Commands and shortcuts](#commands-and-shortcuts)
 - [Tips](#tips)
@@ -87,12 +88,15 @@ npm start
 After the first setup, start Furnace with `npm run build && npm start` (or just
 `npm start` if nothing changed).
 
-On first launch, a **Getting started** guide on the workspace page walks you
-through connecting a model, opening and trusting a folder, choosing permissions
-and giving the agent its first task. Each step ticks itself off as you go. Skip it
-any time and bring it back with `/tour` or **Furnace: Getting Started** in the
-command palette (`Ctrl+Shift+P`). **Help → Welcome** also has a short *Get Started
-with Furnace* walkthrough.
+On first launch, a welcome card asks whether you'd like the **tutorial**: a short tour
+that points at each part of the window (the chat, the Workspace pages, the message box,
+Source Control, the editor and the menus) and opens them for you. Use **Next** and
+**Back** or the arrow keys; **End Tutorial** or Escape stops it. Choose **Not Now** to
+skip it, and tick **Don't show this again** to stop the card appearing.
+
+The **Furnace** menu in the top bar has **Begin Tutorial**, to take the tour again, and
+**Help**, which opens this guide and the data usage page inside Furnace, with search.
+You can also type `/tour` or `/help` in the message box.
 
 ## Connect a model
 
@@ -207,6 +211,37 @@ result (command, exit code and output) is kept on the Plan page. You can run a c
 yourself with **Run Check**, or answer a manual one with **Mark Passed** / **Mark
 Failed** (or **It Works** / **It Doesn't** when the agent asks in the chat).
 
+### Autocompute: save online usage with local models
+
+Tick **Autocompute** next to the permissions menu (Build mode, or `/autocompute on`) to
+have your online model (ChatGPT, Claude or an API key) lead and hand small tasks to
+local Ollama models. The online model plans the work and keeps the difficult parts. It
+gives a local model one precisely described task at a time: a unit test, a small edit in
+one or two files, a rename, docs. Each local task runs in its own small context with only
+file tools. Furnace runs the task's check, and the online model reviews the diff:
+**accept**, **revise** (sent back with notes, at most twice) or **take over** (it finishes
+the task itself).
+
+- It works with whatever tool-capable models you have in Ollama. The first time it meets a
+  local model, the online model assesses it once from its size, family and abilities and
+  gives it a confidence score for each kind of task. Furnace keeps the assessment (until
+  the model changes or you reset), so later replies spend no tokens re-checking. For each
+  task the online model only rates its difficulty; Furnace works out every model's
+  confidence from the assessment, its record and the difficulty, and hands the task to the
+  smallest (fastest) model that reaches 50, so bigger, slower models only get tasks the
+  smaller ones can't take. When none reaches 50, the online model keeps the task. The card
+  shows the scores.
+- Furnace refuses kinds of task a model hasn't proven it can do. Once a model has 3 or more results for
+  a kind and fewer than half were accepted, that kind stays with the online model.
+  `/autocompute reset` clears every record and assessment so models are assessed again and
+  earn their tasks again.
+- A **Delegated to local models** card on the reply shows each task, its check, the
+  verdict and the local tokens used. Steps a local model ran are labelled with its name.
+- Local work uses none of your online usage, but the online model still spends tokens
+  on planning and reviews. Local models are slower; small, checkable tasks pay off most.
+- You need an online model selected and an Ollama model with tool calling (for example
+  `qwen3`). Approvals, sandbox, checkpoints and Revert work as usual for local edits.
+
 ### Background tasks
 
 For longer work, start a task in the background: type `/background add tests for
@@ -306,6 +341,41 @@ Browser**. It opens in a separate, sandboxed window with its own temporary sessi
   used, as OpenAI reports it.
 - ChatGPT, Claude Code and Ollama replies have no per-reply cost in Furnace.
 
+## Themes
+
+The **Themes** menu in the top bar changes how Furnace looks. Pick one of the **Presets**
+(Furnace Charcoal, Ember, Forge, Midnight, Synthwave, Forest, Paper, High Contrast),
+**Surprise Me** for a random readable theme, or **Create a Custom Theme…**. You can also
+type `/theme`, `/theme midnight` or `/theme new`.
+
+A theme has six parts you can mix and match. On the custom theme page, every part has
+**Use from theme…** to copy it from another theme.
+
+| Part | Changes |
+| --- | --- |
+| **Background** | Behind the side bars, the panel area, the status bar and the menus: a solid colour, a gradient or a picture (yours, or one of the included ones; PNG, JPEG, GIF, WebP or SVG up to 10 MB, animated too). Pictures and gradients show through the panels, which are dimmed automatically so text stays readable (or set the dim yourself). Options: **glass panels** (blurred) and the **ember effect** (drifting sparks or a slow glow; it pauses while you type and stays still if your system asks for reduced motion). |
+| **Font** | Text outside the code: menus, side bars, the chat, Workspace and Help. Inter, Nunito and Atkinson Hyperlegible Next are included; fonts installed on your computer are listed too. |
+| **Font colour** | The main and secondary colours of that text. |
+| **Editor font colour** | The code's syntax colours: Charcoal, Midnight Purple, Arctic, Daylight, or any colour theme you installed. |
+| **Editor colour** | The code editor's background and the tabs above it (solid colours only). |
+| **Accent** | Buttons, focus rings, links and tutorial bubbles. |
+
+The code editor's own font and size never change. Changes show in the window as you make
+them; **Save Theme** keeps them (under **My Themes**) and **Cancel** puts the previous theme
+back. The **Readability** list checks each pair of colours and offers **Fix** when text
+would be hard to read.
+
+- **Use for This Project** keeps the current theme for the open folder, so two windows are
+  easy to tell apart. Choosing another theme while it's on changes only that project.
+- **Day and Night…** picks a night theme shown while your system is in dark mode.
+- **Agent Glow** makes the chat panel glow softly: in the accent colour while the agent
+  works, amber when it waits for you, red after an error.
+- **Export Current Theme…** saves a `.furnace-theme` file (with its picture);
+  **Import Theme…** adds one.
+
+A theme changes only this window's look: nothing is written to your editor settings
+apart from the theme's name. A theme appears a moment after the window opens.
+
 ## Debugging and extensions
 
 **JavaScript and TypeScript** debugging is built in (Node.js, plus Chrome and Edge
@@ -336,6 +406,7 @@ Type `/` in the message box for the command list:
 | `/history` | Search, open, rename or delete conversations |
 | `/build-plan` | Build the shared brief step by step |
 | `/compact` | Condense the conversation into a summary now |
+| `/autocompute [on\|off\|reset]` | Let your online model delegate small Build tasks to local models; reset clears their records |
 | `/background <task>` | Run a Build task in its own Git worktree |
 | `/timeline` | Jump to, compare or restore an earlier point |
 | `/review` | Second opinion on the last changes |
@@ -344,10 +415,12 @@ Type `/` in the message box for the command list:
 | `/changes` | Show agent and Git changes in Source Control |
 | `/workspace` | Show the workspace view |
 | `/stop` | Stop the current reply or command |
-| `/tour` | Show the Getting started guide again |
+| `/tour` | Take the tutorial again |
+| `/help` | Open Furnace Help (this guide and data usage) |
 | `/keys` | Show and change keyboard shortcuts |
 | `/diagnostics` | Copy diagnostics for a bug report |
 | `/feedback` | Send feedback |
+| `/theme [name\|new]` | Choose a theme, or create your own |
 | `/zoom [in\|out\|reset]` | Make all text larger or smaller |
 
 - **Enter** sends (while the agent works, it queues the message); **Shift+Enter**
@@ -389,6 +462,7 @@ Type `/` in the message box for the command list:
 | Claude sign-in finished but nothing changed | Open Connections and choose **Refresh Connections**. |
 | "Remember securely" is greyed out | Your system has no unlocked keychain; keys last for the current session only. |
 | "… doesn't support tool calling" | That local model can't use tools, which Plan, Build and Research need. Choose one that does (for example Qwen or Llama 3.1+), or use Discuss. |
+| "Autocompute is on, but …" | Autocompute needs an online model selected and a local Ollama model with tool calling. Choose one, refresh Connections, or untick Autocompute. |
 | "… can't see images" | That model is text-only. Choose a vision model (for example `qwen3-vl`) for screenshots. The agent can't open image files from the project; paste them into the message box instead. |
 | Send is disabled | Pick a model in the message box, or open Connections. |
 | "Background tasks need the project to be a Git repository" | Run `git init` and make a first commit, or use the normal conversation. |
@@ -399,5 +473,5 @@ Type `/` in the message box for the command list:
 
 ## License and notices
 
-Furnace is private software in preview. Code OSS and other third-party components
-keep their own licenses and notices.
+Furnace is released under the [MIT License](LICENSE) and is in preview. Code OSS
+and other third-party components keep their own licenses and notices.
