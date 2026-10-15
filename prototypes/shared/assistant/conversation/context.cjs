@@ -3,6 +3,7 @@ const { randomUUID } = require('node:crypto');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { definitionsSize, protectedPath, binaryFile } = require('../main/agent-tools.ts');
+const { slash } = require('../main/search.ts');
 const { agentInstructions, historyText } = require('../main/agent-context.ts');
 const { orchestrationTools } = require('../main/autocompute.ts');
 const { estimateTokens, replyReserve, CONDENSE_AT, KEEP_RECENT, COMPACT_MIN, summaryInstruction } = require('../main/context-window.ts');
@@ -110,7 +111,7 @@ class ContextMethods {
             let real;
             try { real = await fsp.realpath(path.resolve(base, raw)); } catch { continue; }
             if (real !== base && !real.startsWith(base + path.sep)) continue;
-            const relative = path.relative(base, real) || '.';
+            const relative = slash(path.relative(base, real)) || '.';
             if (protectedPath(relative) || this.rules.deniesPath(this.adapter.root(), relative)) { result.push({ path: relative, kind: 'blocked', text: `@${relative} was not shared: it is protected or blocked by a project rule.` }); continue; }
             const kind = await host.kind(real);
             let entry;
@@ -268,7 +269,7 @@ async function listFolder(host, directory, base) {
             if (result.length >= 300) break;
             if (['.git', 'node_modules'].includes(entry.name)) continue;
             const file = path.join(current, entry.name);
-            result.push(path.relative(base, file) + (entry.directory ? '/' : ''));
+            result.push(slash(path.relative(base, file)) + (entry.directory ? '/' : ''));
             if (entry.directory && depth < 2) queue.push([file, depth + 1]);
         }
     }
