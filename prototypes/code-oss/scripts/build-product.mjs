@@ -20,7 +20,7 @@ await build({ entryPoints: ['conversation', 'home', 'help', 'themes'].map(name =
     target: 'chrome130', jsx: 'automatic', minify: true, sourcemap: true, legalComments: 'linked', define: { 'process.env.NODE_ENV': '"production"' } });
 // Furnace Help shows the user guide and data usage page that ship with the app.
 await mkdir(path.join(output, 'help'), { recursive: true });
-for (const [from, to] of [['README.md', 'guide.md'], ['DATA_USAGE.md', 'data.md']]) await cp(path.join(root, '../..', from), path.join(output, 'help', to));
+for (const [from, to] of [['GUIDE.md', 'guide.md'], ['DATA_USAGE.md', 'data.md']]) await cp(path.join(root, '../..', from), path.join(output, 'help', to));
 // Agent command sandbox (Landlock on Linux, Seatbelt on macOS): optional; without it Auto
 // mode asks before commands.
 await rm(path.join(output, 'sandbox'), { recursive: true, force: true });
