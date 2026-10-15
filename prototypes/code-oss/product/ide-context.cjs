@@ -1,6 +1,8 @@
 'use strict';
 const vscode = require('vscode');
 const path = require('node:path');
+// Project paths are shown with "/" on every platform.
+const slash = file => file.split(path.sep).join('/');
 const { execFile } = require('node:child_process');
 
 // Context the user can share from the IDE: Git working-tree changes, the Problems panel,
@@ -24,7 +26,7 @@ function problemsText(root) {
     const lines = []; let errors = 0, warnings = 0;
     for (const [uri, diagnostics] of vscode.languages.getDiagnostics()) {
         if (uri.scheme !== 'file' && uri.scheme !== 'untitled') continue;
-        const file = root && uri.fsPath.startsWith(root + path.sep) ? path.relative(root, uri.fsPath) : vscode.workspace.asRelativePath(uri, false);
+        const file = root && uri.fsPath.startsWith(root + path.sep) ? slash(path.relative(root, uri.fsPath)) : vscode.workspace.asRelativePath(uri, false);
         for (const item of diagnostics) {
             if (item.severity > vscode.DiagnosticSeverity.Warning) continue;
             if (item.severity === vscode.DiagnosticSeverity.Error) errors++; else warnings++;
