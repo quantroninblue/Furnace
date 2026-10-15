@@ -5,7 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { electronBinary } = require('./electron-binary.cjs');
 
-test('macOS hosts start from the bundle\'s main binary, not the extension host helper', () => {
+// The bundle is simulated with this machine's paths; on Windows those can't be macOS bundle paths.
+test('macOS hosts start from the bundle\'s main binary, not the extension host helper', { skip: process.platform === 'win32' && 'macOS bundle paths cannot be simulated with Windows paths' }, () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'electron-binary-'));
     try {
         const bundle = path.join(dir, 'Furnace.app'), helper = path.join(bundle, 'Contents/Frameworks/Furnace Helper (Plugin).app/Contents/MacOS/Furnace Helper (Plugin)');

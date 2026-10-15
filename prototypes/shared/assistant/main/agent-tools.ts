@@ -10,7 +10,7 @@ import type { BackgroundProcesses } from "./processes";
 import { suggestCommandRule } from "./permissions";
 import { briefSteps, checkText, findStep, type Check, type Evidence, type PlanStep } from "./plan-link";
 import { fetchText } from "./web-fetch";
-import { searchFiles, findFiles } from "./search";
+import { searchFiles, findFiles, slash } from "./search";
 
 // Permission modes mirror Codex: "ask" approves every change and command; "auto"
 // applies project edits and runs sandboxed commands without asking; "full" never asks.
@@ -188,14 +188,14 @@ export function createAgentTools(
       catch { rest.push(path.basename(probe)); const parent = path.dirname(probe); if (parent === probe) break; probe = parent; }
     }
     const inside = !!base && (resolved === base || resolved.startsWith(base + path.sep));
-    const display = inside ? path.relative(base!, resolved) || "." : resolved;
+    const display = inside ? slash(path.relative(base!, resolved)) || "." : resolved;
     const blocked = inside && context.policy?.deniedPath(display);
     if (blocked) throw new Error(`${display} is blocked by the user's saved project rule "${blocked}". Do not access it any other way; ask the user if you need it.`);
     return { file: resolved, display, inside, secret: protectedPath(inside ? display : resolved) };
   }
   type Location = Awaited<ReturnType<typeof locate>>;
   // Search results never include paths a saved project rule blocks.
-  const hidden = (base: string | null, file: string) => !!base && !!context.policy && file.startsWith(base + path.sep) && !!context.policy.deniedPath(path.relative(base, file));
+  const hidden = (base: string | null, file: string) => !!base && !!context.policy && file.startsWith(base + path.sep) && !!context.policy.deniedPath(slash(path.relative(base, file)));
   const writeKind = (...places: Location[]): ApprovalKind | null => {
     if (context.permission === "full") return null;
     if (places.some(place => !place.inside || place.secret)) return "outside";
@@ -246,7 +246,7 @@ export function createAgentTools(
   }
 
   // ---- Code intelligence ----
-  const show = async (file: string) => { const base = await root(); return base && (file === base || file.startsWith(base + path.sep)) ? path.relative(base, file) || "." : file; };
+  const show = async (file: string) => { const base = await root(); return base && (file === base || file.startsWith(base + path.sep)) ? slash(path.relative(base, file)) || "." : file; };
   // Models name a symbol and its line; the column is found here (they miscount columns).
   async function position(input: unknown, line: unknown, symbol: unknown) {
     const place = await locate(input);
