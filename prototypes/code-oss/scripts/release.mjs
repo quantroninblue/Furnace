@@ -29,7 +29,14 @@ const releaseProduct = {
     win32x64UserAppId: '{{1D1316E5-469A-4FEB-9CE4-89CBBBD83BA7}', win32arm64UserAppId: '{{89876165-7F44-4A92-BD7F-56CEBB1BEADD}',
 };
 
-/** Pinned upstream: product patches, then release-only ones; Furnace product.json. */
+// The app icon for each platform: the app and installer (.icns, .ico), Windows Start tiles and Linux.
+export const releaseIcons = [
+    ['furnace.icns', 'darwin/code.icns'], ['furnace.ico', 'win32/code.ico'],
+    ['furnace_70x70.png', 'win32/code_70x70.png'], ['furnace_150x150.png', 'win32/code_150x150.png'],
+    ['furnace.png', 'linux/code.png'],
+];
+
+/** Pinned upstream: product patches, then release-only ones; Furnace product.json and icons. */
 export async function prepare() {
     const pin = JSON.parse(await readFile(path.join(root, 'upstream-pin.json'), 'utf8'));
     if (git('rev-parse', 'HEAD') !== pin.commit) throw new Error(`upstream is not at the pinned ${pin.tag} (${pin.commit})`);
@@ -45,6 +52,9 @@ export async function prepare() {
     const product = { ...JSON.parse(await readFile(productFile, 'utf8')), ...overrides, ...releaseProduct };
     await writeFile(productFile, JSON.stringify(product, null, '\t') + '\n');
     console.log(`product.json: ${product.nameLong} (${product.darwinBundleIdentifier}), gallery ${product.extensionsGallery?.serviceUrl}`);
+    // Furnace's icons in place of Code OSS's (made by scripts/make-icons.mjs).
+    for (const [from, to] of releaseIcons) await cp(path.join(root, 'release/icon', from), path.join(upstream, 'resources', to));
+    console.log(`Icons: ${releaseIcons.map(([, to]) => to).join(', ')}`);
 }
 
 /**

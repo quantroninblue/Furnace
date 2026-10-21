@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Furnace app icon: the F from the ASCII wordmark, cast in hot metal with terminal scanlines.
+       Master artwork for scripts/make-icons.mjs. The charcoal tile sits on Apple's 824 px icon grid;
+       the Windows and Linux icons crop to the tile and leave out the shadow (#shadow). -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34353b"/><stop offset="1" stop-color="#141518"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc56b"/><stop offset="0.5" stop-color="#ff7a2a"/><stop offset="1" stop-color="#e2380f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.62" r="0.5">
+      <stop offset="0" stop-color="#ff7a2a" stop-opacity="0.55"/><stop offset="1" stop-color="#ff7a2a" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="scan" width="8" height="14" patternUnits="userSpaceOnUse">
+      <rect y="11" width="8" height="3" fill="#000" fill-opacity="0.22"/>
+    </pattern>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <clipPath id="tileClip"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+  </defs>
+  <rect id="shadow" x="100" y="112" width="824" height="824" rx="186" fill="#000" fill-opacity="0.35" filter="url(#drop)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)"/>
+  <g clip-path="url(#tileClip)">
+    <ellipse cx="512" cy="540" rx="320" ry="300" fill="url(#glow)" opacity="0.7"/>
+  </g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="185" fill="none" stroke="#fff" stroke-opacity="0.08" stroke-width="3"/>
+  <g transform="translate(18 18)" fill="#5a1d08">
+    <rect x="296" y="272" width="448" height="96"/><rect x="296" y="272" width="128" height="480"/><rect x="296" y="464" width="320" height="96"/>
+  </g>
+  <g fill="url(#metal)">
+    <rect x="296" y="272" width="448" height="96"/><rect x="296" y="272" width="128" height="480"/><rect x="296" y="464" width="320" height="96"/>
+  </g>
+  <g fill="url(#scan)">
+    <rect x="296" y="272" width="448" height="96"/><rect x="296" y="368" width="128" height="384"/><rect x="424" y="464" width="192" height="96"/>
+  </g>
+</svg>
