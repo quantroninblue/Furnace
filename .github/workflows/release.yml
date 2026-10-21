@@ -123,6 +123,11 @@ jobs:
       - name: Update installs in place (quit, swap, reopen)
         run: node prototypes/code-oss/scripts/update-smoke.mjs darwin "$(ls -d prototypes/code-oss/VSCode-darwin-arm64/*.app)" prototypes/code-oss/.cache/dist/Furnace-darwin-arm64.zip
 
+      - name: Connection service starts and ChatGPT sign-in reaches the browser
+        run: |
+          app="$(ls -d prototypes/code-oss/VSCode-darwin-arm64/*.app)"
+          node prototypes/code-oss/scripts/connections-smoke.mjs "$app/Contents/MacOS/$(ls "$app/Contents/MacOS")" "$app/Contents/Resources/app/extensions/furnace-workspace" --sign-in
+
   windows:
     name: Windows (x64)
     # windows-2022 (Visual Studio 2022), like upstream's own CI: windows-latest has Visual Studio
@@ -241,6 +246,9 @@ jobs:
       - name: Update installs in place (quit, reinstall, reopen)
         run: node prototypes/code-oss/scripts/update-smoke.mjs win32 "$(cygpath -w prototypes/code-oss/.cache/dist/FurnaceUserSetup-x64.exe)"
 
+      - name: Connection service starts and ChatGPT sign-in reaches the browser
+        run: node prototypes/code-oss/scripts/connections-smoke.mjs "$(cygpath -w prototypes/code-oss/VSCode-win32-x64/Furnace.exe)" "$(cygpath -w prototypes/code-oss/VSCode-win32-x64/resources/app/extensions/furnace-workspace)" --sign-in
+
   linux:
     name: Linux (x64)
     # Ubuntu 22.04 (glibc 2.35): the packages run on Ubuntu 22.04+, Debian 12+ and Fedora 36+.
@@ -358,6 +366,9 @@ jobs:
 
       - name: Update installs in place (quit, reinstall the package, reopen)
         run: xvfb-run -a node prototypes/code-oss/scripts/update-smoke.mjs linux prototypes/code-oss/.cache/dist/Furnace-linux-x64.deb
+
+      - name: Connection service starts
+        run: xvfb-run -a node prototypes/code-oss/scripts/connections-smoke.mjs /usr/share/furnace/furnace /usr/share/furnace/resources/app/extensions/furnace-workspace
 
       - name: The .rpm installs on Fedora
         run: |
