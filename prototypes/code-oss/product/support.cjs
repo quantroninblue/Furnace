@@ -71,7 +71,7 @@ function createSupport({ context, conversation, session, root, permission, sandb
         if (ready?.version === latest.version) { await offerRestart(latest.version); return latest; }
         if (!manual && context.globalState.get('updateSkipped') === latest.version) return latest;
         const target = updater.installTarget({ appRoot: vscode.env.appRoot });
-        const asset = latest.assets[updater.platformKey()];
+        const asset = target.ok ? latest.assets[updater.assetKey(target)] : latest.assets[updater.platformKey()];
         const inPlace = Boolean(updates.publicKey && asset && target.ok);
         const message = `Furnace ${latest.version} is available (you have ${info.version}).${latest.notes ? ` ${latest.notes}` : ''}`;
         for (;;) {
@@ -103,7 +103,7 @@ function createSupport({ context, conversation, session, root, permission, sandb
             }
             const staged = await updater.stage(target, file, dir);
             await updater.startInstaller({ target, staged, dir, pid: process.ppid, spawner });
-            ready = { version: latest.version, dir };
+            ready = { version: latest.version, dir, platform: target.platform };
             await context.globalState.update('updateStaged', { version: latest.version });
             await offerRestart(latest.version);
         } catch (error) {
@@ -112,7 +112,8 @@ function createSupport({ context, conversation, session, root, permission, sandb
         }
     }
     async function offerRestart(version) {
-        const choice = await vscode.window.showInformationMessage(`Furnace ${version} is ready. Restart now to finish updating, or it installs the next time you quit Furnace.`, 'Restart Now', 'Later');
+        const password = ready.platform === 'linux' ? ' Linux will ask for your password to install it.' : '';
+        const choice = await vscode.window.showInformationMessage(`Furnace ${version} is ready. Restart now to finish updating, or it installs the next time you quit Furnace.${password}`, 'Restart Now', 'Later');
         if (choice !== 'Restart Now') return;
         await updater.requestRelaunch(ready.dir);
         await vscode.commands.executeCommand('workbench.action.quit');

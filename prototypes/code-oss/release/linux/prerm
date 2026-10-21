@@ -1,0 +1,3 @@
+#!/bin/sh
+# Furnace .deb: nothing to do before removal.
+exit 0
