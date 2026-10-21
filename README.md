@@ -20,9 +20,10 @@ terminals, Git, debugger and extensions you already know are all there too.
 
 ## Get Furnace
 
-Download the latest version for macOS (Apple Silicon) or Windows (x64) from the
-[Releases page](https://github.com/quantroninblue/Furnace/releases/latest). From then on,
-Furnace tells you when a new version is out and installs it for you.
+Download the latest version for macOS (Apple Silicon), Windows (x64) or Linux (x64, `.deb`
+or `.rpm`) from [quantroninblue.github.io/Furnace](https://quantroninblue.github.io/Furnace/)
+or the [Releases page](https://github.com/quantroninblue/Furnace/releases/latest). From then
+on, Furnace tells you when a new version is out and installs it for you.
 
 ## Start with the tutorial
 
