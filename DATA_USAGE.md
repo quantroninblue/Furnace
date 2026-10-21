@@ -84,10 +84,12 @@ These checks send no conversation data.
 
 ## What is stored on your computer
 
-All app data lives in your Furnace profile folder (by default
-`prototypes/code-oss/.profile/` in the Furnace folder, or the folder set by
-`AI_GUI_CODE_OSS_PROFILE`), under
-`user-data/User/globalStorage/ai-gui.workspace-product/`:
+All app data lives in your Furnace profile folder, under
+`User/globalStorage/ai-gui.workspace-product/`. The profile folder is
+`~/Library/Application Support/Furnace` on macOS, `%APPDATA%\Furnace` on Windows and
+`~/.config/Furnace` on Linux (when running Furnace from source:
+`prototypes/code-oss/.profile/user-data`, or the folder set by `AI_GUI_CODE_OSS_PROFILE`).
+It contains:
 
 - `conversations/`: your chats, planning briefs, captured research text and
   attachment snapshots, saved as **unencrypted** JSON files. Treat them like any

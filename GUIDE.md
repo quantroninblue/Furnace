@@ -325,6 +325,8 @@ next time you quit. Your settings, conversations and connections stay as they ar
   Furnace may use its keychain item; choose **Always Allow**.
 - **Windows:** the update runs the Furnace installer in the background once Furnace
   closes, keeping the options you chose when you installed it.
+- **Linux:** Furnace updates itself when it was installed from the `.deb` or `.rpm`. Once
+  Furnace closes, your system asks for your password to install the new package.
 
 ## Commands and shortcuts
 
@@ -403,5 +405,6 @@ Type `/` in the message box for the command list:
 | A local model forgets earlier messages | Ollama requests use a 16k-token context window; long chats are condensed. Pick a model with a larger context for long tasks. |
 | Inline edit says the file changed | You typed while the model worked; run the edit again. |
 | "Furnace couldn't update itself" | Choose **Download Instead** and install the new version from the Releases page. On macOS, move Furnace to Applications first if it says it is running from the disk image or a temporary copy. |
+| The Linux update didn't install | Installing needs your password; if you cancelled the prompt, Furnace offers the update again. You can also run `sudo apt install ./Furnace-linux-x64.deb` (or `sudo dnf install ./Furnace-linux-x64.rpm`) yourself. |
 | Something else went wrong | **Copy Diagnostics** (Start page or `/diagnostics`) copies versions, settings and recent errors without conversation text or keys. **Send Feedback** opens a report you can check before sending. **Furnace: Show Log** opens the log. |
 | Run and Debug says "All debug extensions are disabled" | The built-in debugger wasn't downloaded. Run `node scripts/setup.mjs extensions-debug builtin-extensions` in `prototypes/code-oss`, then restart. |
