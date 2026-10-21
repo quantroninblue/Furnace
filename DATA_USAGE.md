@@ -117,6 +117,8 @@ All app data lives in your Furnace profile folder (by default
   the task changes; it is deleted when you discard the task. `tasks.json` lists the
   tasks and their summaries.
 - `connections/`: encrypted remembered keys and ChatGPT account information.
+- `updates/`: a downloaded update while it waits to be installed, and its install log;
+  removed once the new version starts.
 
 Other data:
 
@@ -147,10 +149,13 @@ computer, and only with your approval unless you chose Full access.
 
 ## Updates, diagnostics and feedback
 
-- **Update check.** Only when a build names an update feed (development builds do
-  not), Furnace downloads that feed once a day to see whether a newer version exists.
-  The request carries nothing but the usual HTTP headers. Turn it off with
-  `aiGui.updates.check`. Updates are never installed automatically.
+- **Updates.** Release builds download a small file from Furnace's GitHub Releases
+  page (`github.com/quantroninblue/Furnace`) once a day to see whether a newer version
+  exists (development builds don't). The request carries nothing but the usual HTTP
+  headers, and GitHub sees it like any download. Turn it off with `aiGui.updates.check`.
+  Nothing is installed unless you choose **Update**: Furnace then downloads the new
+  version from GitHub, checks that it is signed by us and unchanged, and installs it
+  when you restart or quit.
 - **Copy Diagnostics** puts versions, settings, connection states and recent log
   lines on your clipboard, with your home folder, email addresses and keys removed.
   It contains no conversation text or file contents.
