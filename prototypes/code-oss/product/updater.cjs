@@ -119,7 +119,9 @@ async function download(asset, file, { fetcher = globalThis.fetch, signal, onPro
         await fsp.rename(partial, file);
         return file;
     } catch (error) {
-        out.destroy();
+        // Wait for the file to close (or finish opening) before removing it, or the open can
+        // land after the removal and leave the partial file behind (seen on Windows).
+        await new Promise(resolve => { if (out.closed) return resolve(); out.once('close', resolve); out.destroy(); });
         await fsp.rm(partial, { force: true });
         throw error;
     }
