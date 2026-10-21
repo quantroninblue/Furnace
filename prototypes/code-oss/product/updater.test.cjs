@@ -159,7 +159,7 @@ test('Linux: only a Furnace .deb or .rpm install updates itself, through pkexec'
     assert.deepEqual(Object.keys(updater.readFeed({ ...feed, assets: { 'linux-x64-deb': asset, 'linux-x64-rpm': asset } }).assets), ['linux-x64-deb', 'linux-x64-rpm']);
 });
 
-test('the Linux install script installs the package as root once Furnace exits, then reopens it after Restart Now', { skip: process.platform === 'win32' }, async () => {
+test('the Linux install script installs the package as root once Furnace exits, then reopens it after Restart Now', { skip: process.platform !== 'linux' }, async () => {
     for (const [kind, relaunch] of [['deb', true], ['rpm', false]]) {
         const dir = temp(), calls = path.join(dir, 'calls'), opened = path.join(dir, 'opened');
         const elevate = path.join(dir, 'pkexec'), launcher = path.join(dir, 'furnace');
