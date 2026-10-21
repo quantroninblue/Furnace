@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="images/furnace-icon-150.png">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Furnace: the AI coding workspace where you stay in charge">
-<meta property="og:description" content="Free and open source. Every model in one conversation, local models for the small jobs, checkpoints for every change, and you decide what the agent may do.">
+<meta property="og:description" content="Free and open source for macOS, Windows and Linux. Every model in one conversation, local models for the small jobs, checkpoints for every change, and you decide what the agent may do.">
 <meta property="og:url" content="https://quantroninblue.github.io/Furnace/">
 <meta property="og:image" content="https://quantroninblue.github.io/Furnace/images/social-card.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -145,12 +145,15 @@ h2 { font-size: clamp(28px, 3.2vw, 38px); line-height: 1.12; letter-spacing: -0.
 .steps-start h3 { margin: 0 0 8px; font-size: 18px; }
 .steps-start p { margin: 0; color: var(--muted); font-size: 15.5px; }
 
-.downloads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.downloads { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
 .platform { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; display: grid; gap: 14px; align-content: start; min-width: 0; }
 .platform.detected { border-color: #ff7a2a66; }
 .platform h3 { margin: 0; font-size: 21px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .platform h3 small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.platform .pair { display: flex; flex-wrap: wrap; gap: 10px; }
+.platform .pair .button { flex: 1 1 auto; justify-content: center; }
 .platform ol { margin: 0; padding-left: 20px; color: var(--muted); font-size: 15.5px; display: grid; gap: 6px; }
+.platform code { overflow-wrap: anywhere; color: var(--text); }
 .platform .file { font-family: var(--font-mono); font-size: 12.5px; color: var(--faint); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .also { margin-top: 22px; color: var(--muted); font-size: 15.5px; }
 
@@ -164,6 +167,7 @@ footer a:hover { color: var(--text); }
   .hero { grid-template-columns: minmax(0, 1fr); gap: 44px; padding-block: 44px 56px; }
   .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .privacy { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .downloads { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   body { font-size: 16px; }
@@ -189,7 +193,7 @@ footer a:hover { color: var(--text); }
 <main>
   <div class="wrap hero">
     <div>
-      <p class="eyebrow">Free and open source · macOS and Windows</p>
+      <p class="eyebrow">Free and open source · macOS, Windows and Linux</p>
       <pre class="wordmark" aria-label="Furnace">███████╗██╗   ██╗██████╗ ███╗   ██╗ █████╗  ██████╗███████╗
 ██╔════╝██║   ██║██╔══██╗████╗  ██║██╔══██╗██╔════╝██╔════╝
 █████╗  ██║   ██║██████╔╝██╔██╗ ██║███████║██║     █████╗
@@ -205,7 +209,7 @@ footer a:hover { color: var(--text); }
         </a>
         <a class="button" href="https://github.com/quantroninblue/Furnace">View on GitHub</a>
       </div>
-      <p class="release-line" id="release-line">Apple Silicon Macs and 64-bit Windows. Updates itself.</p>
+      <p class="release-line" id="release-line">Apple Silicon Macs, 64-bit Windows and Linux. Updates itself.</p>
       <ul class="models" aria-label="Models you can use">
         <li>ChatGPT plan</li><li>Claude Code</li><li>OpenAI API</li><li>Anthropic API</li><li>Ollama, on your machine</li>
       </ul>
@@ -344,8 +348,21 @@ footer a:hover { color: var(--text); }
           </ol>
           <p class="file" data-file="FurnaceUserSetup-x64.exe">FurnaceUserSetup-x64.exe</p>
         </article>
+        <article class="platform" id="platform-linux">
+          <h3>Linux <small>64-bit · Ubuntu 22.04+, Debian 12+, Fedora 36+</small></h3>
+          <div class="pair">
+            <a class="button primary" data-download="linux" href="https://github.com/quantroninblue/Furnace/releases/latest/download/Furnace-linux-x64.deb">Download .deb</a>
+            <a class="button" data-download="linux-rpm" href="https://github.com/quantroninblue/Furnace/releases/latest/download/Furnace-linux-x64.rpm">Download .rpm</a>
+          </div>
+          <ol>
+            <li>Ubuntu, Debian, Mint: <code>sudo apt install ./Furnace-linux-x64.deb</code></li>
+            <li>Fedora: <code>sudo dnf install ./Furnace-linux-x64.rpm</code></li>
+            <li>Open Furnace from your apps, or run <code>furnace</code>.</li>
+          </ol>
+          <p class="file" data-file="Furnace-linux-x64.deb">Furnace-linux-x64.deb</p>
+        </article>
       </div>
-      <p class="also">Linux builds are coming later. Every version and its release notes are on the <a href="https://github.com/quantroninblue/Furnace/releases">Releases page</a>.</p>
+      <p class="also">Every version and its release notes are on the <a href="https://github.com/quantroninblue/Furnace/releases">Releases page</a>.</p>
     </div>
   </section>
 </main>
@@ -366,8 +383,10 @@ footer a:hover { color: var(--text); }
 // Point the main button at this computer's download, and show the latest release's version and sizes.
 (function () {
   var ua = navigator.userAgent || '';
-  var os = /Windows/.test(ua) ? 'windows' : (/Macintosh|Mac OS X/.test(ua) && !/iPhone|iPad/.test(ua) && navigator.maxTouchPoints < 2) ? 'mac' : null;
-  var labels = { mac: 'Download for macOS', windows: 'Download for Windows' };
+  var os = /Windows/.test(ua) ? 'windows'
+    : (/Macintosh|Mac OS X/.test(ua) && !/iPhone|iPad/.test(ua) && navigator.maxTouchPoints < 2) ? 'mac'
+    : (/Linux|X11/.test(ua) && !/Android/.test(ua)) ? 'linux' : null;
+  var labels = { mac: 'Download for macOS', windows: 'Download for Windows', linux: 'Download for Linux (.deb)' };
   if (os) {
     var link = document.querySelector('[data-download="' + os + '"]');
     var primary = document.getElementById('primary-download');
@@ -381,7 +400,7 @@ footer a:hover { color: var(--text); }
     .then(function (release) {
       var version = String(release.tag_name || '').replace(/^v/, '');
       var date = release.published_at ? new Date(release.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '';
-      document.getElementById('release-line').textContent = 'Version ' + version + (date ? ' · ' + date : '') + ' · Apple Silicon Macs and 64-bit Windows · Updates itself';
+      document.getElementById('release-line').textContent = 'Version ' + version + (date ? ' · ' + date : '') + ' · macOS, Windows and Linux · Updates itself';
       (release.assets || []).forEach(function (asset) {
         var file = document.querySelector('[data-file="' + asset.name + '"]');
         if (file) file.textContent = asset.name + ' · ' + Math.round(asset.size / 1048576) + ' MB · version ' + version;
