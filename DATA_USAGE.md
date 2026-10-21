@@ -113,7 +113,7 @@ It contains:
 - `conversations/audit/`: the activity log for each project: titles of the agent's
   steps (for example the commands it ran and files it changed), how each was
   allowed, your approvals, reverts and rules. Up to 5 MB per project; clear it on
-  the **Activity** page.
+  **Settings → Activity**.
 - `background/`: background tasks. `worktrees/` holds a Git worktree for each task,
   a **full copy of your project** (including uncommitted and untracked files) that
   the task changes; it is deleted when you discard the task. `tasks.json` lists the

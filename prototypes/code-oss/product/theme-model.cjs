@@ -227,17 +227,23 @@ function resolve(input, { installed = null, pictureFile = () => null } = {}) {
         light,
     };
 }
+/** Furnace's action colour (the icon's ember), as in media/workspace.css. */
+const EMBER = '#ff7a2a';
 /** Colour tokens for Furnace's panels (media/workspace.css); null keeps the stylesheet's Charcoal values. */
 function panelTokens(input) {
     const t = sanitize(input);
     if (presetById(input?.id)?.base && input?.preset) return null;
     const panel = t.background.color, text = t.text.main, muted = t.text.muted, accent = t.accent, light = isLight(panel);
+    const action = accent.toLowerCase() === '#c6c6c6' ? (light ? '#c2410c' : EMBER) : accent;
     const status = light
         ? { ok: '#3f7a3a', pass: '#2f7d32', add: '#2f7d32', bad: '#b3412e', danger: '#b3412e', warn: '#8f6310', info: '#3d5a8a', yellow: '#806400', 'ok-text': '#355e33' }
         : { ok: '#a9b8a0', pass: '#a9c79a', add: '#b5cf9e', bad: '#e0a99b', danger: '#dbafa5', warn: '#d5b483', info: '#8f9fb8', yellow: '#e3cf96', 'ok-text': '#c9d1c4' };
     return {
         text, soft: mix(text, muted, 0.5), muted, faint: mix(muted, panel, 0.2), ink: text,
         accent, 'accent-strong': accent, 'accent-hover': shift(accent, 0.12), 'on-accent': onColor(accent),
+        // Primary actions (Send, Approve, focus rings, the working state): the theme's accent, or Furnace's
+        // ember where the accent is Charcoal's neutral silver.
+        action, 'action-hover': shift(action, 0.12), 'on-action': onColor(action),
         line: alpha(text, 0.06), 'line-strong': alpha(text, 0.1), raised: alpha(text, 0.025),
         panel, surface: shift(panel, 0.04), 'raised-solid': shift(panel, 0.07), scroll: shift(panel, 0.15),
         well: light ? shift(panel, 0.04) : mix(panel, '#000000', 0.35), 'code-bg': light ? '#1e1f22' : mix(t.editor.background, '#000000', 0.4),

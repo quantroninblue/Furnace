@@ -28,7 +28,7 @@ function Connections({ chat }: { chat: ChatState }) {
   const tabs: [Tab, string][] = [["chatgpt", "ChatGPT"], ["claude", "Claude"], ["local", "Local"], ["api", "API keys"]];
   return (
     <section id="connections" className="connections">
-      <div className="connection-modal">
+      <div className="connection-modal settings-panel">
         <div className="modal-heading"><div className="welcome-symbol small"><Icon name="plug" size={18} /></div></div>
         <div className="eyebrow">Your tools, one workspace</div><h2>Connect a model.</h2>
         <p className="lede">Choose a connection, then pick an Active model in the conversation panel. API keys use provider billing; ChatGPT uses your plan; Claude Code owns its sign-in and billing. Nothing falls back to another account automatically.</p>
@@ -87,7 +87,7 @@ function Connections({ chat }: { chat: ChatState }) {
         </label>
         <div className="modal-actions">
           <button className="ghost" disabled={busy} onClick={() => post({ type: "connection", value: { action: "discover" } })}>Refresh Connections</button>
-          <button className="primary" onClick={closeConnections}>Close Connections</button>
+          <button className="primary" onClick={closeConnections}>Done</button>
         </div>
       </div>
     </section>
@@ -214,7 +214,7 @@ function Brief({ value, busy }: { value: string; busy: boolean }) {
   return (
     <>
       <div className="plan-toolbar"><Icon name="book" size={14} /><span>Project brief</span>
-        {steps.length > 0 && <span id="plan-progress" className="plan-progress">{done} of {steps.length} steps done</span>}<small>LOCAL</small></div>
+        {steps.length > 0 && <span id="plan-progress" className="plan-progress">{done} of {steps.length} steps done</span>}<small>Saved on this device</small></div>
       <textarea id="brief" className="plan-editor" maxLength={40000} aria-label="Planning brief" value={brief} onChange={event => setBrief(event.target.value)}
         placeholder={"What are we building?\n\nGoals\nConstraints\n\nSteps\n- [ ] First step\n- [ ] Second step"} />
       <div className="row plan-actions">
@@ -245,7 +245,7 @@ function Research({ data }: { data: State }) {
       </form>
       <p id="research-state" role="status" className="muted">{research.error || (research.loading ? "Loading…" : research.opened ? research.title || research.url : "Enter a website or search query to begin.")}</p>
       <div className="sources-heading">
-        <span className="section-label">COLLECTED SOURCES · <b id="source-count">{research.sources.length}</b>/6</span>
+        <span className="section-label">Collected sources · <b id="source-count">{research.sources.length}</b>/6</span>
         <div className="row">
           <button className="ghost" disabled={!research.opened || research.loading} onClick={() => post({ type: "captureSelection" })}>Capture Selection</button>
           <button className="ghost" disabled={!research.opened || research.loading} onClick={() => post({ type: "capturePage" })}>Capture Page</button>
@@ -339,12 +339,50 @@ const shortcuts: [string, string][] = [["Ctrl+Alt+I", "Focus the conversation"],
   ["Ctrl+Alt+Enter / Ctrl+Alt+Backspace", "Approve / deny the waiting action"], ["Ctrl+Alt+E", "Inline edit the selection (Ctrl+Enter accepts, Escape rejects)"], ["@ and /", "Add files or folders / commands"]];
 const modeTitles: Partial<Record<Page, string>> = { start: "Start · Discuss mode: the chat uses only the context you share (Alt+1)", plan: "Plan mode: reads and searches the project, proposes a brief (Alt+2)",
   build: "Build mode: reads, edits and creates files, runs commands (Alt+3)", research: "Research mode: uses shared sources, suggests pages (Alt+4)" };
-const pages: [Page, string][] = [["start", "Start"], ["plan", "Plan"], ["build", "Build"], ["research", "Research"], ["rules", "Rules"], ["activity", "Activity"], ["connections", "Connections"]];
+const pages: [Page, string][] = [["start", "Start"], ["plan", "Plan"], ["build", "Build"], ["research", "Research"]];
+// Settings: everything that is not a mode page.
+const settings: [Page, string, IconName][] = [["connections", "Connections", "plug"], ["rules", "Rules", "shield"], ["activity", "Activity", "list"], ["shortcuts", "Shortcuts", "terminal"], ["about", "About & support", "sparkle"]];
+const isSettings = (page: Page) => settings.some(([id]) => id === page);
+
+function Shortcuts() {
+  return (
+    <section>
+      <div className="page-heading"><h2>Keyboard shortcuts</h2><p className="lede">The main actions, without leaving the keyboard. Type <code>/</code> in the message box for every command.</p></div>
+      <dl className="shortcuts">{shortcuts.map(([keys, action]) => <div key={keys}><dt><kbd>{keys}</kbd></dt><dd>{action}</dd></div>)}</dl>
+      <div className="row"><button className="ghost small" onClick={() => post({ type: "keys" })}>Change Shortcuts</button></div>
+    </section>
+  );
+}
+function About() {
+  return (
+    <section>
+      <div className="page-heading"><h2>About &amp; support</h2><p className="lede">Help, the tutorial, themes, and what to send when something goes wrong.</p></div>
+      <div className="settings-actions">
+        <button className="ghost" onClick={() => post({ type: "help" })}><Icon name="book" size={14} />Help</button>
+        <button className="ghost" onClick={() => post({ type: "tutorial" })}><Icon name="sparkle" size={14} />Begin Tutorial</button>
+        <button className="ghost" onClick={() => post({ type: "themeCommand", value: "" })}><Icon name="layout" size={14} />Themes</button>
+        <button className="ghost" onClick={() => post({ type: "checkUpdates" })}><Icon name="refresh" size={14} />Check for Updates</button>
+        <button className="ghost" onClick={() => post({ type: "diagnostics" })} title="Copies versions, settings and recent errors (no conversation text or keys) for a bug report"><Icon name="copy" size={14} />Copy Diagnostics</button>
+        <button className="ghost" onClick={() => post({ type: "feedback" })}><Icon name="pencil" size={14} />Send Feedback</button>
+      </div>
+      <section id="privacy" className="privacy" aria-label="Privacy">
+        <h3 className="section-title"><Icon name="shield" size={14} /> Your data stays yours</h3>
+        <ul>
+          <li><b>No Furnace account, no telemetry.</b> Conversations, the activity log, saved rules and checkpoints stay on this device.</li>
+          <li><b>Only what you send leaves.</b> A message goes to the model you chose, with the context you shared (chips, @files, pasted images) and what the agent reads to do the task.</li>
+          <li><b>Your accounts, your billing.</b> ChatGPT, Claude Code, API keys or local Ollama; nothing switches accounts or falls back to paid billing on its own.</li>
+          <li><b>Keys stay in a separate service</b> and in your system’s secure storage only when you choose “Remember”.</li>
+          <li><b>Local models keep everything on this machine.</b> With Ollama, nothing leaves it.</li>
+        </ul>
+      </section>
+    </section>
+  );
+}
 
 export function HomePage() {
   const data = useStore(value => value.data), page = useStore(value => value.page), note = useStore(value => value.note);
   if (!data) return <main className="workspace" />;
-  const review = data.review, busy = review.busy || !!data.chat?.busy, open = page === "connections";
+  const review = data.review, busy = review.busy || !!data.chat?.busy, inSettings = isSettings(page);
   return (
     <main className="workspace">
       <header className="page-top">
@@ -358,10 +396,22 @@ export function HomePage() {
         </div>
       </header>
       <nav className="page-tabs" role="tablist" aria-label="Workspace pages">
-        {pages.map(([id, label]) => <button key={id} role="tab" aria-selected={page === id} title={modeTitles[id]} onClick={() => id === "connections" ? post({ type: "connections" }) : choosePage(id)}>{label}</button>)}
+        {pages.map(([id, label]) => <button key={id} role="tab" aria-selected={page === id} title={modeTitles[id]} onClick={() => choosePage(id)}>{label}</button>)}
+        <button role="tab" className="settings-tab" aria-selected={inSettings} title="Connections, rules, activity, shortcuts and support" onClick={() => !inSettings && post({ type: "connections" })}><Icon name="settings" size={13} />Settings</button>
       </nav>
-      {open && data.chat && <Connections chat={data.chat} />}
-      <div id="workspace-pages" hidden={open}>
+      <div id="workspace-pages">
+        {inSettings && <div className="settings">
+          <nav className="settings-nav" aria-label="Settings">
+            {settings.map(([id, label, icon]) => <button key={id} aria-current={page === id ? "page" : undefined} onClick={() => id === "connections" ? post({ type: "connections" }) : choosePage(id)}><Icon name={icon} size={13} />{label}</button>)}
+          </nav>
+          <div className="settings-body">
+            {page === "connections" && data.chat && <Connections chat={data.chat} />}
+            {page === "rules" && data.chat && <Rules chat={data.chat} />}
+            {page === "activity" && <Activity />}
+            {page === "shortcuts" && <Shortcuts />}
+            {page === "about" && <About />}
+          </div>
+        </div>}
         {page === "start" && <section className="welcome">
           <Logo />
           <h1>Your ideas.<br /><span>A little more possibility.</span></h1>
@@ -379,28 +429,10 @@ export function HomePage() {
               <button className="ghost" onClick={() => post({ type: "help" })}>Help</button>
             </div>
           </div>
-          <p className="footnote"><Icon name="shield" size={12} /> Built for collaboration. You keep the controls.</p>
-          <h3 className="section-title">Keyboard shortcuts</h3>
-          <dl className="shortcuts">{shortcuts.map(([keys, action]) => <div key={keys}><dt><kbd>{keys}</kbd></dt><dd>{action}</dd></div>)}</dl>
-          <div className="row">
-            <button className="ghost small" onClick={() => post({ type: "keys" })}>Change Shortcuts</button>
-            <button className="ghost small" onClick={() => post({ type: "diagnostics" })} title="Copies versions, settings and recent errors (no conversation text or keys) for a bug report">Copy Diagnostics</button>
-            <button className="ghost small" onClick={() => post({ type: "feedback" })}>Send Feedback</button>
-            <button className="ghost small" onClick={() => post({ type: "checkUpdates" })}>Check for Updates</button>
-          </div>
-          <section id="privacy" className="privacy" aria-label="Privacy">
-            <h3 className="section-title"><Icon name="shield" size={14} /> Your data stays yours</h3>
-            <ul>
-              <li><b>No Furnace account, no telemetry.</b> Conversations, the activity log, saved rules and checkpoints stay on this device.</li>
-              <li><b>Only what you send leaves.</b> A message goes to the model you chose, with the context you shared (chips, @files, pasted images) and what the agent reads to do the task.</li>
-              <li><b>Your accounts, your billing.</b> ChatGPT, Claude Code, API keys or local Ollama; nothing switches accounts or falls back to paid billing on its own.</li>
-              <li><b>Keys stay in a separate service</b> and in your system’s secure storage only when you choose “Remember”.</li>
-              <li><b>Local models keep everything on this machine.</b> With Ollama, nothing leaves it.</li>
-            </ul>
-          </section>
+          <p className="footnote"><Icon name="shield" size={12} /> Built for collaboration. You keep the controls. <button className="link" onClick={() => choosePage("shortcuts")}>Keyboard shortcuts</button> · <button className="link" onClick={() => choosePage("about")}>Privacy and support</button></p>
         </section>}
         {page === "plan" && <section>
-          <div className="page-heading"><h2>Make the next step clear.</h2><p className="lede">An editable brief saved with this conversation. Share it from the conversation’s context chips to include it in replies, or build it step by step.</p></div>
+          <div className="page-heading"><h2>Make the next step clear.</h2><p className="lede">An editable brief saved with this conversation. Share it from the message box’s + menu to include it in replies, or build it step by step.</p></div>
           <Brief value={data.state.brief} busy={busy} />
           {data.chat && <PlanChecks steps={data.chat.planSteps || []} checking={data.chat.checking} busy={busy} />}
         </section>}
@@ -420,11 +452,9 @@ export function HomePage() {
           </div>
           {data.chat && <BackgroundTasks tasks={data.background || []} chat={data.chat} />}
           <div className="note"><Icon name="terminal" size={13} /><p>The agent’s commands show live in the <b>AI Agent</b> terminal (Ctrl+C there interrupts one). Dev servers and watchers run in the background in their own terminals and appear above the message box with Stop. Every file the agent changes is listed in Source Control under <b>AI Agent</b>, next to Git’s own changes.</p></div>
-          <div className="note"><Icon name="shield" size={13} /><p>To run a command yourself, switch the composer to <b>Run</b> or type <code>/run npm test</code>. Commands run with your user permissions in the project folder; output appears in the conversation and Stop cancels it. Example Edit is a deterministic demo.</p></div>
+          <div className="note"><Icon name="shield" size={13} /><p>To run a command yourself, choose <b>Run a command yourself</b> in the message box’s + menu or type <code>/run npm test</code>. Commands run with your user permissions in the project folder; output appears in the conversation and Stop cancels it. Example Edit is a deterministic demo.</p></div>
         </section>}
         {page === "research" && <Research data={data} />}
-        {page === "rules" && data.chat && <Rules chat={data.chat} />}
-        {page === "activity" && <Activity />}
       </div>
       <div id="status" role="status" className="status-line">{data.chat?.error || data.status || note}</div>
       <TutorialLayer />

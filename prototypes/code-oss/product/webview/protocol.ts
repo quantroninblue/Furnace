@@ -75,7 +75,7 @@ export type Rule = { id: string; effect: "allow" | "deny"; kind: "command" | "ed
 export type HistoryItem = { id: string; title: string; updatedAt: string; messageCount: number; snippet?: string };
 export type AuditEntry = { time: string; event: string; tool?: string; title: string; status?: string; decision?: string; permission?: string; detail?: string };
 export type PathItem = { path: string; kind: "file" | "folder" };
-export type Page = "start" | "plan" | "build" | "research" | "rules" | "activity" | "connections";
+export type Page = "start" | "plan" | "build" | "research" | "rules" | "activity" | "connections" | "shortcuts" | "about";
 /** vision/tools: what the model accepts, when known (local models); size and family from Ollama. */
 export type Model = { id: string; name: string; vision?: boolean; tools?: boolean; size?: string; family?: string };
 export type Connection = { provider: string; connected?: boolean; installed?: boolean; account?: string; error?: string };
