@@ -1,4 +1,4 @@
-// Windows test build (windows branch; run by .github/workflows/windows-build.yml on a Windows runner).
+// Windows release build (run by .github/workflows/release.yml on a Windows runner).
 //   node scripts/package-windows.mjs prepare            pinned upstream: all patches, Furnace product.json
 //   (then, in upstream: npm ci && npm run gulp vscode-win32-x64-min; then npm run build)
 //   node scripts/package-windows.mjs assemble [arch]    built-in extension and app entry
