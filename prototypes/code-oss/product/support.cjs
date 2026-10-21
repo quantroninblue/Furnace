@@ -6,22 +6,10 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
-/** Compares dotted versions ("0.10.2" > "0.9"); non-numeric parts count as 0. */
-function newer(candidate, current) {
-    const parts = value => String(value).replace(/^v/, '').split(/[.+-]/).slice(0, 3).map(part => Number.parseInt(part, 10) || 0);
-    const [a, b] = [parts(candidate), parts(current)];
-    for (let index = 0; index < 3; index++) if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) > (b[index] || 0);
-    return false;
-}
-/** Validates an update feed: { version, url, notes? } with an https download page. */
-function readFeed(value) {
-    if (!value || typeof value.version !== 'string' || !/^v?\d+(\.\d+){0,2}/.test(value.version)) throw new Error('The update feed has no version.');
-    const url = new URL(String(value.url || ''));
-    if (url.protocol !== 'https:') throw new Error('The update feed must link to an https page.');
-    return { version: value.version.replace(/^v/, ''), url: url.toString(), notes: typeof value.notes === 'string' ? value.notes.slice(0, 300) : '' };
-}
+const updater = require('./updater.cjs');
+const { newer, readFeed } = updater;
 
-function createSupport({ context, conversation, session, root, permission, sandbox, recent, lastStatus, status, fetcher = globalThis.fetch }) {
+function createSupport({ context, conversation, session, root, permission, sandbox, recent, lastStatus, status, fetcher = globalThis.fetch, spawner }) {
     const product = async () => JSON.parse(await fs.readFile(path.join(context.extensionPath, 'package.json'), 'utf8'));
     const home = os.homedir();
     const redact = value => String(value).split(home).join('~').replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<email>').replace(/\b(sk|sk-ant|sk-admin)-[\w-]{6,}/g, '<key>');
@@ -65,27 +53,77 @@ function createSupport({ context, conversation, session, root, permission, sandb
         await vscode.env.clipboard.writeText(body);
         status('Feedback copied to the clipboard; paste it wherever you report issues.');
     }
-    // Daily check of a JSON feed ({ version, url, notes }) named in package.json "updates.feed".
-    // No feed configured, or aiGui.updates.check off: nothing is fetched.
+    // Daily check of the update feed named in package.json "updates" (release builds only). With a
+    // public key the feed must be signed, and Update downloads, verifies and installs the new version
+    // in place (updater.cjs); otherwise, or where Furnace can't replace itself, Download opens the
+    // release page. No feed configured, or aiGui.updates.check off: nothing is fetched.
+    const updatesDir = () => path.join(context.globalStorageUri.fsPath, 'updates');
+    let ready = null; // { version, dir } once an update is staged and its installer is waiting.
     async function checkForUpdates(manual = false) {
-        const info = await product(), feed = info.updates?.feed;
-        if (!feed) { if (manual) status('This build has no update feed. Download new versions from where you got Furnace.'); return null; }
+        const info = await product(), updates = info.updates || {};
+        if (!updates.feed) { if (manual) status('This build has no update feed. Download new versions from where you got Furnace.'); return null; }
         if (!manual && !vscode.workspace.getConfiguration('aiGui.updates').get('check', true)) return null;
         if (!manual && Date.now() - (context.globalState.get('updateCheckedAt') || 0) < 20 * 3600 * 1000) return null;
         let latest;
-        try {
-            const response = await fetcher(feed, { signal: AbortSignal.timeout(10000), headers: { accept: 'application/json' } });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            latest = readFeed(await response.json());
-        } catch (error) { if (manual) status(`Could not check for updates: ${error.message}`); return null; }
+        try { latest = await updater.fetchFeed(updates, fetcher); } catch (error) { if (manual) status(`Could not check for updates: ${error.message}`); return null; }
         await context.globalState.update('updateCheckedAt', Date.now());
         if (!newer(latest.version, info.version)) { if (manual) status(`Furnace ${info.version} is up to date.`); return null; }
+        if (ready?.version === latest.version) { await offerRestart(latest.version); return latest; }
         if (!manual && context.globalState.get('updateSkipped') === latest.version) return latest;
-        const choice = await vscode.window.showInformationMessage(`Furnace ${latest.version} is available (you have ${info.version}).${latest.notes ? ` ${latest.notes}` : ''}`, 'Download', 'Skip This Version');
-        if (choice === 'Download') await vscode.env.openExternal(vscode.Uri.parse(latest.url));
-        if (choice === 'Skip This Version') await context.globalState.update('updateSkipped', latest.version);
-        return latest;
+        const target = updater.installTarget({ appRoot: vscode.env.appRoot });
+        const asset = latest.assets[updater.platformKey()];
+        const inPlace = Boolean(updates.publicKey && asset && target.ok);
+        const message = `Furnace ${latest.version} is available (you have ${info.version}).${latest.notes ? ` ${latest.notes}` : ''}`;
+        for (;;) {
+            const choice = await vscode.window.showInformationMessage(message, ...(inPlace ? ['Update', 'Release Notes'] : ['Download']), 'Skip This Version');
+            if (choice === 'Release Notes') { await vscode.env.openExternal(vscode.Uri.parse(latest.url)); continue; }
+            if (choice === 'Download') await vscode.env.openExternal(vscode.Uri.parse(latest.url));
+            if (choice === 'Skip This Version') await context.globalState.update('updateSkipped', latest.version);
+            if (choice === 'Update') await installUpdate(latest, asset, target);
+            if (choice === 'Download' && asset && !target.ok) status(target.reason);
+            return latest;
+        }
     }
-    return { diagnostics, copyDiagnostics, sendFeedback, checkForUpdates, redact };
+    async function installUpdate(latest, asset, target) {
+        const dir = path.join(updatesDir(), latest.version), file = path.join(dir, asset.file);
+        try {
+            if (!await updater.verified(asset, file)) {
+                const done = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Downloading Furnace ${latest.version}`, cancellable: true }, async (progress, token) => {
+                    const abort = new AbortController(), cancel = token.onCancellationRequested(() => abort.abort());
+                    let reported = 0;
+                    try {
+                        await updater.download(asset, file, { fetcher, signal: abort.signal, onProgress: (received, total) => {
+                            const percent = Math.floor(received / total * 100);
+                            if (percent > reported) { progress.report({ increment: percent - reported, message: `${Math.round(received / 1048576)} of ${Math.round(total / 1048576)} MB` }); reported = percent; }
+                        } });
+                        return true;
+                    } catch (error) { if (token.isCancellationRequested) return false; throw error; } finally { cancel.dispose(); }
+                });
+                if (!done) return status('Update cancelled.');
+            }
+            const staged = await updater.stage(target, file, dir);
+            await updater.startInstaller({ target, staged, dir, pid: process.ppid, spawner });
+            ready = { version: latest.version, dir };
+            await context.globalState.update('updateStaged', { version: latest.version });
+            await offerRestart(latest.version);
+        } catch (error) {
+            const choice = await vscode.window.showErrorMessage(`Furnace couldn't update itself: ${error.message}`, 'Download Instead');
+            if (choice === 'Download Instead') await vscode.env.openExternal(vscode.Uri.parse(latest.url));
+        }
+    }
+    async function offerRestart(version) {
+        const choice = await vscode.window.showInformationMessage(`Furnace ${version} is ready. Restart now to finish updating, or it installs the next time you quit Furnace.`, 'Restart Now', 'Later');
+        if (choice !== 'Restart Now') return;
+        await updater.requestRelaunch(ready.dir);
+        await vscode.commands.executeCommand('workbench.action.quit');
+    }
+    // After an update (or a staged one that is no longer newer), remove its downloads.
+    async function cleanUpdates() {
+        const info = await product(), staged = context.globalState.get('updateStaged');
+        if (!staged || newer(staged.version, info.version)) return;
+        await fs.rm(updatesDir(), { recursive: true, force: true });
+        await context.globalState.update('updateStaged', undefined);
+    }
+    return { diagnostics, copyDiagnostics, sendFeedback, checkForUpdates, cleanUpdates, redact };
 }
 module.exports = { createSupport, newer, readFeed };

@@ -57,15 +57,24 @@ export async function prepare() {
     console.log(`Icons: ${releaseIcons.map(([, to]) => to).join(', ')}`);
 }
 
+// Where releases live: the feed every build checks, and its public key (release-feed.mjs signs with
+// the matching private key, the FURNACE_UPDATE_KEY secret).
+export const updateRepository = process.env.FURNACE_RELEASE_REPOSITORY || 'quantroninblue/Furnace';
+export const updateFeed = `https://github.com/${updateRepository}/releases/latest/download/latest.json`;
+
 /**
  * Adds Furnace to a packaged app folder (`…/resources/app`): the extension, built in rather than a
  * development extension and without source maps, and the app entry that routes the extension's
- * host processes and seeds first-run settings.
+ * host processes and seeds first-run settings, and the update feed with its public key.
  */
 export async function installFurnace(app, platform) {
     const extension = path.join(app, 'extensions/furnace-workspace');
     await rm(extension, { recursive: true, force: true });
     await cp(path.join(root, '.cache/product'), extension, { recursive: true, filter: source => !source.endsWith('.map') });
+    // Release builds check for updates (development builds have no feed, so never do).
+    const manifestFile = path.join(extension, 'package.json'), manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
+    manifest.updates = { feed: updateFeed, publicKey: await readFile(path.join(root, 'release/update-key.pem'), 'utf8') };
+    await writeFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
     await cp(path.join(root, 'release/furnace-main.mjs'), path.join(app, 'out/furnace-main.js'));
     await writeFile(path.join(app, 'out/furnace-settings.json'), JSON.stringify(settingsDefaults(platform), null, 2) + '\n');
     const packageFile = path.join(app, 'package.json');

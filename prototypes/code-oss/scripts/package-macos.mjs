@@ -1,7 +1,7 @@
-// macOS test build (mac branch; run by .github/workflows/macos-build.yml on a macOS runner).
+// macOS release build (run by .github/workflows/release.yml on a macOS runner).
 //   node scripts/package-macos.mjs prepare            pinned upstream: all patches, Furnace product.json
 //   (then, in upstream: npm ci && npm run gulp vscode-darwin-arm64-min; then npm run build)
-//   node scripts/package-macos.mjs assemble [arch]    built-in extension, app entry, ad-hoc signing, .dmg
+//   node scripts/package-macos.mjs assemble [arch]    built-in extension, app entry, ad-hoc signing, .dmg, update .zip
 // Steps that need macOS tools (codesign, hdiutil) are skipped elsewhere, so the file layout can be
 // checked on Linux.
 import { execFileSync } from 'node:child_process';
@@ -31,6 +31,11 @@ async function assemble(arch = process.arch) {
     const dmg = path.join(dist, `Furnace-darwin-${arch}.dmg`);
     execFileSync('hdiutil', ['create', '-volname', 'Furnace', '-srcfolder', staging, '-ov', '-format', 'UDZO', dmg], { stdio: 'inherit' });
     console.log(`Disk image: ${dmg}`);
+    // What the in-app updater downloads (product/updater.cjs): the signed app, zipped by ditto so
+    // its signature, symlinks and permissions survive.
+    const zip = path.join(dist, `Furnace-darwin-${arch}.zip`);
+    execFileSync('ditto', ['-c', '-k', '--keepParent', bundle, zip]);
+    console.log(`Update archive: ${zip}`);
 }
 
 const [command, ...args] = process.argv.slice(2);
