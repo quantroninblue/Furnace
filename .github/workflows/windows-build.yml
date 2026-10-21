@@ -1,0 +1,130 @@
+# Furnace Windows test build (x64): a release build of the pinned Code OSS with the Furnace
+# extension built in, as a per-user installer. Not code-signed.
+# Runs on a pushed tag such as win-v0.1.0-test1, or by hand once this file is on the default branch.
+name: Windows build
+
+on:
+  push:
+    tags: ['win-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    # windows-2022 (Visual Studio 2022), like upstream's own CI: windows-latest has Visual Studio
+    # 2026, which upstream's preinstall check (2019/2022 only) rejects.
+    runs-on: windows-2022
+    timeout-minutes: 240
+    env:
+      UPSTREAM: prototypes/code-oss/upstream
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Keep LF line endings in both checkouts, as on Linux and macOS: the patches are LF, and
+      # upstream pins build/*.ts to LF while autocrlf would turn src/ into CRLF.
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - name: Read the upstream pin
+        id: pin
+        run: |
+          echo "tag=$(node -p "require('./prototypes/code-oss/upstream-pin.json').tag")" >> "$GITHUB_OUTPUT"
+          echo "node=$(node -p "require('./prototypes/code-oss/upstream-pin.json').node")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.pin.outputs.node }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Toolchain, disk and Windows SDK
+        run: |
+          node --version; python --version; df -h .
+          git config --global core.longpaths true
+          # Upstream's packaging strips signatures with signtool; put the newest SDK on PATH.
+          sdk="$(ls -d "/c/Program Files (x86)/Windows Kits/10/bin/10."*/x64 | sort -V | tail -1)"
+          test -x "$sdk/signtool.exe"
+          cygpath -w "$sdk" >> "$GITHUB_PATH"
+
+      - name: Fetch the pinned Code OSS source
+        run: git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" https://github.com/microsoft/vscode.git "$UPSTREAM"
+
+      - name: Patch upstream and set the Furnace product identity
+        run: node prototypes/code-oss/scripts/package-windows.mjs prepare
+
+      - name: Install Code OSS dependencies
+        working-directory: ${{ env.UPSTREAM }}
+        env:
+          npm_config_arch: x64
+          npm_config_foreground_scripts: 'true'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          for i in 1 2 3; do
+            npm ci && exit 0
+            echo "npm ci failed (attempt $i), retrying"
+          done
+          exit 1
+
+      - name: Build and package Code OSS (win32-x64, minified)
+        working-directory: ${{ env.UPSTREAM }}
+        run: npm run gulp vscode-win32-x64-min
+
+      - name: Build Furnace
+        run: |
+          npm ci
+          npm run build
+
+      - name: Assemble Furnace into the app
+        run: node prototypes/code-oss/scripts/package-windows.mjs assemble x64
+
+      - name: Build the per-user installer
+        working-directory: ${{ env.UPSTREAM }}
+        run: |
+          npm run gulp vscode-win32-x64-inno-updater
+          npm run gulp vscode-win32-x64-user-setup
+          cd ../../.. && node prototypes/code-oss/scripts/package-windows.mjs collect x64
+
+      # Upload before the checks, so a failing check still leaves the build to inspect.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Furnace-win32-x64
+          path: |
+            prototypes/code-oss/.cache/dist/FurnaceUserSetup-x64.exe
+            prototypes/code-oss/.cache/dist/READ ME FIRST.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Furnace tests on Windows
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Smoke test the packaged app
+        run: |
+          exe="prototypes/code-oss/VSCode-win32-x64/Furnace.exe"
+          temp="$(cygpath -w "$RUNNER_TEMP")"
+          # The app entry refuses host entries outside its built-in extensions.
+          echo "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/ran', 'yes')" > "$RUNNER_TEMP/outside.cjs"
+          if "$exe" "$temp\\outside.cjs" --assistant-service "$temp" 2> "$RUNNER_TEMP/refused.txt"; then echo "outside entry was not refused"; exit 1; fi
+          grep 'refusing to run' "$RUNNER_TEMP/refused.txt" || echo "(no stderr from the GUI process; exit code checked)"
+          test ! -e "$RUNNER_TEMP/ran"
+          # The editor starts with the Furnace extension and stays up.
+          "$exe" --user-data-dir "$temp\\profile\\data" --extensions-dir "$temp\\profile\\extensions" --skip-welcome --disable-updates --new-window &
+          sleep 60
+          tasklist //FI "IMAGENAME eq Furnace.exe" | grep -q Furnace.exe || { echo "Furnace exited during startup"; exit 1; }
+          grep -rq 'ai-gui.workspace-product' "$RUNNER_TEMP/profile/data/logs" || { echo "Furnace extension not seen in the logs"; exit 1; }
+          taskkill //IM Furnace.exe //F //T || true

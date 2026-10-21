@@ -9,6 +9,7 @@ exports.startAssistantService = (options = {}) => {
 const directory = options.directory || process.argv[process.argv.indexOf('--assistant-service') + 1];
 if (!directory || !path.isAbsolute(directory)) app.exit(1);
 app.setPath('userData', directory); app.enableSandbox();
+app.dock?.hide(); // macOS: a background service, not a second Furnace in the Dock.
 // Replies run concurrently (a chat plus background tasks), each stoppable by its request ID.
 let service, quitting = false;
 const active = new Map(), operations = new Set();

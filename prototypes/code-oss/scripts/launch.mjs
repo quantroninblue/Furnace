@@ -1,6 +1,8 @@
 import { lstat, mkdir, readFile, rename, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { environment, root, upstream } from './environment.mjs';
+const { settingsDefaults } = createRequire(import.meta.url)('../product/settings-defaults.cjs');
 
 export async function launchOptions(profile = process.env.AI_GUI_CODE_OSS_PROFILE ?? path.join(root, '.profile')) {
     const product = JSON.parse(await readFile(path.join(upstream, 'product.json'), 'utf8'));
@@ -41,20 +43,9 @@ export async function launchOptions(profile = process.env.AI_GUI_CODE_OSS_PROFIL
     await mkdir(absoluteProfile, { recursive: true });
     const settingsDirectory = path.join(absoluteProfile, 'user-data/User');
     await mkdir(settingsDirectory, { recursive: true });
-    // Application-scoped product defaults. Extensions cannot default these, so add
-    // any missing keys; never override a value already present in the profile.
-    const defaults = {
-        'workbench.colorTheme': 'Furnace Charcoal', 'chat.disableAIFeatures': true,
-        'workbench.startupEditor': 'none', 'workbench.secondarySideBar.defaultVisibility': 'visible',
-        'telemetry.telemetryLevel': 'off', 'extensions.autoUpdate': false,
-        'extensions.autoCheckUpdates': false, 'window.commandCenter': false,
-        // 120%: readable on dense laptop screens; users change it with Text size or Ctrl+=/-.
-        'window.zoomLevel': 1,
-        // Themed dialogs match the charcoal panels. Menus stay native: the drawn (custom) menu
-        // bar dropdowns opened behind the workspace panels on a real Linux desktop, and Linux
-        // only uses native menus with the native title bar.
-        'window.dialogStyle': 'custom', 'window.titleBarStyle': 'native', 'window.menuStyle': 'native',
-    };
+    // Application-scoped product defaults (product/settings-defaults.cjs); add any missing
+    // keys, never override a value already present in the profile.
+    const defaults = settingsDefaults();
     // Earlier product defaults to replace in existing profiles (only if still unchanged).
     const replaced = { 'window.menuStyle': 'custom', 'workbench.colorTheme': 'AI GUI Charcoal' };
     const settingsFile = path.join(settingsDirectory, 'settings.json');

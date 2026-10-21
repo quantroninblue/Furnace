@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { ChatEvent } from "../shared/types";
 
 // Only explicit user commands enter here, never inferred model output.
@@ -9,12 +11,10 @@ export function runCommand(
   emit: (event: ChatEvent) => void,
 ) {
   const windows = process.platform === "win32";
-  const shell = windows
-    ? process.env.COMSPEC || "cmd.exe"
-    : process.env.SHELL || "/bin/bash";
+  const shell = windows ? agentShell() : { file: process.env.SHELL || "/bin/bash", args: (line: string) => ["-c", line] };
   const child = spawn(
-    shell,
-    windows ? ["/d", "/s", "/c", command] : ["-c", command],
+    shell.file,
+    shell.args(command),
     {
       cwd,
       detached: !windows,
@@ -94,14 +94,32 @@ export interface TerminalMirror { write(text: string): void; exit(code: number |
 export interface CommandTerminals { open(command: string, cwd: string, background: boolean): TerminalMirror | null }
 export type SandboxSpec = { helper: string; writable: string[] };
 
+/** Git Bash from Git for Windows, never WSL's System32\bash.exe; null when Git is not installed. */
+export function findGitBash(env: NodeJS.ProcessEnv = process.env, exists: (file: string) => boolean = existsSync) {
+  const roots = [env.ProgramFiles, env["ProgramFiles(x86)"], env.LOCALAPPDATA && path.win32.join(env.LOCALAPPDATA, "Programs")]
+    .filter((dir): dir is string => !!dir).map((dir) => path.win32.join(dir, "Git"));
+  // Git on PATH: <Git>\cmd\git.exe or <Git>\bin\git.exe.
+  for (const dir of (env.PATH ?? env.Path ?? "").split(";")) if (/[\\/](cmd|bin)[\\/]?$/i.test(dir) && exists(path.win32.join(dir, "git.exe"))) roots.push(path.win32.dirname(dir.replace(/[\\/]$/, "")));
+  return roots.map((dir) => path.win32.join(dir, "bin", "bash.exe")).find((file) => exists(file)) ?? null;
+}
+
+let shell: { file: string; args: (command: string) => string[]; name: string } | undefined;
+/** The shell for agent commands: bash; on Windows Git Bash when installed, otherwise Windows PowerShell. */
+export function agentShell() {
+  if (shell) return shell;
+  if (process.platform !== "win32") return (shell = { file: "/bin/bash", args: (command) => ["-c", command], name: "bash" });
+  const bash = findGitBash();
+  return (shell = bash ? { file: bash, args: (command) => ["-c", command], name: "Git Bash" }
+    : { file: "powershell.exe", args: (command) => ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command], name: "Windows PowerShell" });
+}
+
 // Starts an agent command in its own process group, optionally inside the sandbox helper.
 export function spawnAgentShell(command: string, options: { cwd: string; sandbox?: SandboxSpec }) {
   const windows = process.platform === "win32";
-  const shell = windows ? process.env.COMSPEC || "cmd.exe" : "/bin/bash";
-  const shellArgs = windows ? ["/d", "/s", "/c", command] : ["-c", command];
+  const { file: shellFile, args: shellArgs } = agentShell();
   const [file, args] = options.sandbox
-    ? [options.sandbox.helper, [...options.sandbox.writable.flatMap((dir) => ["--write", dir]), "--", shell, ...shellArgs]]
-    : [shell, shellArgs];
+    ? [options.sandbox.helper, [...options.sandbox.writable.flatMap((dir) => ["--write", dir]), "--", shellFile, ...shellArgs(command)]]
+    : [shellFile, shellArgs(command)];
   const child = spawn(file, args, {
     cwd: options.cwd, detached: !windows, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, TERM: "dumb", NO_COLOR: "1", GIT_TERMINAL_PROMPT: "0", PAGER: "cat", GIT_PAGER: "cat", CI: process.env.CI ?? "1" },
