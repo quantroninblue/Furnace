@@ -93,6 +93,8 @@ try {
     await expect(first.locator('.todos')).toHaveCount(1);
     await expect(first.locator('.step-time')).toHaveText('7s');
     checks.push('finished work collapses to "Worked for … · N steps"; reads and edits group; only the latest checklist shows');
+    // One outcome line on the finished reply: unreverted files and the last command.
+    await expect(first.locator('.outcome')).toHaveText(/^✓ \d+ files? changed \(\+\d+ −\d+\) · npm test passed$/);
     const changes = first.locator('.changes');
     await expect(changes.locator('.changes-head strong')).toHaveText('Changed 2 files');
     await expect(changes.getByText('Reverted')).toBeVisible();
@@ -108,19 +110,24 @@ try {
     await first.getByRole('button', { name: 'Copy', exact: true }).click();
     expect((await posted(page, 'copy'))[0].text).toContain('export function validate');
     const live = page.locator('.message').nth(4);
-    await expect(live.locator('.live-state')).toContainText('WAITING FOR YOU · ');
+    await expect(live.locator('.live-state')).toContainText('Waiting for you · ');
+    // The approval bar above the message box asks the same question and can't scroll away.
+    await expect(page.locator('#approval-bar strong')).toHaveText('Apply this change?');
+    await expect(page.locator('#approval-bar code')).toHaveText('Deleted src/old.ts');
+    await page.locator('#approval-bar').getByRole('button', { name: 'Deny' }).click();
+    expect((await posted(page, 'approval')).at(-1)).toMatchObject({ id: 'd1', decision: 'deny' });
     await live.getByRole('button', { name: 'Approve' }).click();
-    expect((await posted(page, 'approval'))[0]).toMatchObject({ id: 'd1', decision: 'approve' });
-    checks.push('live byline shows state and elapsed time; inline approval and code Copy post back');
+    expect((await posted(page, 'approval')).at(-1)).toMatchObject({ id: 'd1', decision: 'approve' });
+    checks.push('live byline shows state and elapsed time; the approval bar and the inline approval post back; code Copy');
     await live.getByRole('button', { name: 'Always allow edits in this project' }).click();
-    expect((await posted(page, 'approval'))[1]).toMatchObject({ id: 'd1', decision: 'project' });
+    expect((await posted(page, 'approval')).at(-1)).toMatchObject({ id: 'd1', decision: 'project' });
     await expect(page.locator('.condensed-note > summary')).toContainText('Earlier messages condensed · 2 messages');
     await expect(page.locator('.message').first()).toHaveClass(/condensed-out/);
     await expect(page.locator('.message').nth(2)).not.toHaveClass(/condensed-out/);
     await expect(page.locator('.attachment-chip')).toHaveText(['@src/app.ts', '@.env · not shared', 'shot.png']);
     await expect(page.locator('#context-meter')).toHaveText('65%');
     await expect(page.locator('#context-meter')).toHaveClass(/medium/);
-    expect(await page.locator('#context-meter').getAttribute('title')).toContain('about 130k of 200k tokens');
+    await expect(page.locator('.meter-tip [role="tooltip"]')).toContainText('about 130k of 200k tokens');
     checks.push('approval offers a saved project rule; condensed-summary note dims older messages; mention/image chips; context meter shows usage');
     // A reply that ticked its checklist without doing anything carries a warning; its reasoning is collapsed.
     const lazy = { id: 'a3', role: 'assistant', model: 'openai/gpt-fixture', state: 'complete', content: 'All steps completed.', unbacked: 'unresolved', reasoning: 'Planning the parser in my head.',
@@ -134,17 +141,18 @@ try {
     // Autocompute: the checkbox in Build mode, a live delegated task, and the finished task card.
     const autoChat = { ...chat, busy: false, autocompute: { enabled: false, ready: true, reason: '', locals: ['ollama/qwen3:14b'] } };
     await send(page, state({ chat: autoChat, messages: { reset: false, order: messages.map(m => m.id), upsert: [] } }));
-    await expect(page.locator('.autocompute-toggle')).toHaveAttribute('title', /Local models available: qwen3:14b\. Tick to turn it on/);
+    await expect(page.locator('.autocompute-tip [role="tooltip"]')).toContainText('Local models available: qwen3:14b.');
     await page.locator('#autocompute').click(); // Controlled by the extension's state, so it stays unticked until that arrives.
     expect(await posted(page, 'autocompute')).toEqual([{ type: 'autocompute', enabled: true, sessionId: 'chat-1' }]);
     await send(page, state({ chat: { ...autoChat, autocompute: { enabled: true, ready: false, reason: 'No local model with tool calling is connected.', locals: [] } }, messages: { reset: false, order: messages.map(m => m.id), upsert: [] } }));
-    await expect(page.locator('.autocompute-toggle.warn')).toHaveAttribute('title', /can't run: No local model/);
+    await expect(page.locator('.autocompute-toggle.warn')).toBeVisible();
+    await expect(page.locator('.autocompute-tip [role="tooltip"]')).toContainText("can't run: No local model");
     const delegated = { id: 't1', title: 'Add parser tests', kind: 'test', model: 'ollama/qwen3:14b', instructions: 'Write tests for parse() in src/parse.ts.', files: ['src/parse.test.ts'], check: 'npm test', state: 'running', attempts: 1, summary: '', usage: { input: 900, output: 40 },
       confidence: 80, scores: [{ model: 'ollama/qwen3:14b', confidence: 80, reason: '14B, small test' }, { model: 'ollama/qwen3:8b', confidence: 55, reason: 'smaller' }] };
     const delegating = { id: 'a4', role: 'assistant', model: 'openai/gpt-fixture', state: 'streaming', content: '', startedAt: Date.now(), autocompute: { tasks: [delegated], usage: { input: 900, output: 40 } },
         steps: [step('w1', 'write_file', 'Created src/parse.test.ts (+20 −0)', { status: 'running', by: 'ollama/qwen3:14b' })] };
     await send(page, state({ chat: { ...autoChat, busy: true }, messages: { reset: false, order: [...messages.map(m => m.id), 'a4'], upsert: [delegating] } }));
-    await expect(page.locator('#message-a4 .live-state')).toContainText('LOCAL · qwen3:14b');
+    await expect(page.locator('#message-a4 .live-state')).toContainText('Local · qwen3:14b');
     await expect(page.locator('#message-a4 .step .step-by')).toHaveText('qwen3:14b');
     const finished = { ...delegating, state: 'complete', content: 'Done.', steps: [], autocompute: { tasks: [{ ...delegated, state: 'accepted', outcome: 'revised', attempts: 2, exitCode: 0, review: 'Covers the edge cases.', summary: 'Added 4 tests.' }], usage: { input: 1900, output: 80 } } };
     await send(page, state({ chat: autoChat, messages: { reset: false, order: [...messages.map(m => m.id), 'a4'], upsert: [finished] } }));
@@ -210,6 +218,20 @@ try {
     await expect(draft).toHaveValue('hello world');
     await send(page, state({ chat: idle, state: { mode: 'Build', draft: '', brief: '' } }));
     await expect(draft).toHaveValue('');
+    // Model and mode menus: grouped by provider, keyboard-driven, post the choice.
+    await page.getByRole('button', { name: 'Active model' }).click();
+    await expect(page.getByRole('listbox', { name: 'Active model' }).locator('.menu-heading').first()).toHaveText('OpenAI API');
+    await page.getByRole('option', { name: /^openai: gpt-fixture/ }).click();
+    expect((await posted(page, 'model')).at(-1)).toMatchObject({ value: 'openai/gpt-fixture' });
+    await page.getByRole('button', { name: 'Mode', exact: true }).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('listbox', { name: 'Mode' })).toBeVisible();
+    await page.keyboard.press('Home'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+    expect((await posted(page, 'mode')).at(-1)).toMatchObject({ value: 'Plan' });
+    await page.getByRole('button', { name: 'Permissions' }).click();
+    await page.getByRole('option', { name: /^Full access/ }).click();
+    expect((await posted(page, 'permission')).at(-1)).toMatchObject({ value: 'full' });
+    checks.push('model, mode and permission menus: grouped models, keyboard navigation, choices post back');
     await draft.fill('/per');
     await expect(page.locator('#slash')).toBeVisible();
     await page.keyboard.press('Enter');
@@ -226,9 +248,11 @@ try {
     await expect(page.getByRole('listbox', { name: 'Files and folders' }).getByRole('option')).toHaveCount(2);
     await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
     await expect(draft).toHaveValue('Look at @"src/my app" ');
-    // Context chips: selection, Git changes, Problems.
-    await page.getByRole('button', { name: 'Selection app.ts:3–9' }).click();
-    await page.getByRole('button', { name: 'Problems (2)' }).click();
+    // The + menu shares context: selection, Problems.
+    await page.getByRole('button', { name: 'Context and attachments' }).click();
+    await page.getByRole('option', { name: /^Selection app\.ts:3–9/ }).click();
+    await page.getByRole('button', { name: 'Context and attachments' }).click();
+    await page.getByRole('option', { name: /^Problems \(2\)/ }).click();
     expect((await posted(page, 'context')).slice(-2)).toEqual([{ type: 'context', field: 'shareSelection', enabled: true, sessionId: 'chat-1' }, { type: 'context', field: 'shareProblems', enabled: true, sessionId: 'chat-1' }]);
     // While busy, Enter queues; queued messages and background processes are listed.
     const busyChat = { ...chat, busy: true, queue: [{ id: 'q1', text: 'Then update the docs' }], processes: [{ id: 'p1', command: 'npm run dev', cwd: '/demo', status: 'running', exitCode: null, startedAt: 1, sandboxed: false }] };
@@ -378,11 +402,15 @@ try {
     await page.locator('#learn').getByRole('button', { name: 'Begin Tutorial' }).click();
     await page.locator('#learn').getByRole('button', { name: 'Help' }).click();
     expect([(await posted(page, 'tutorial')).length, (await posted(page, 'help')).length]).toEqual([1, 1]);
+    await page.getByRole('button', { name: 'Keyboard shortcuts' }).click();
+    await expect(page.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('.shortcuts div')).toHaveCount(10);
+    await page.getByRole('button', { name: 'About & support' }).click();
     await expect(page.locator('#privacy')).toContainText('no telemetry');
     await page.getByRole('button', { name: 'Send Feedback' }).click();
     expect(await posted(page, 'feedback')).toHaveLength(1);
-    checks.push('Start page sets Discuss, shows privacy notes, Begin Tutorial, Help, Send Feedback and Check for Updates');
+    await page.getByRole('tab', { name: 'Start' }).click();
+    checks.push('Start page sets Discuss with Begin Tutorial and Help; Settings holds the shortcuts, privacy notes and support actions');
     // A tutorial step on the workspace page shows its page (without changing the mode) and points at it.
     await send(page, { type: 'tutorial', step: { id: '2-plan', index: 19, total: 29, title: 'Plan', body: 'Checks prove steps.', target: '#brief', last: false, page: 'plan' } });
     await expect(page.getByRole('tab', { name: 'Plan' })).toHaveAttribute('aria-selected', 'true');
@@ -410,7 +438,7 @@ try {
     expect((await posted(page, 'connection')).at(-1)).toMatchObject({ value: { action: 'adminConnect', provider: 'openai', key: 'sk-admin-fixture' } });
     checks.push('API keys tab: local spend, organization spend with an admin key, admin key entry');
     await page.screenshot({ path: path.join(artifacts, 'connections.png') });
-    await page.getByRole('button', { name: 'Close Connections', exact: true }).click();
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
     await send(page, state({ chat: idle, state: { mode: 'Plan', draft: '', brief: '' } }));
     await page.getByLabel('Planning brief').fill('Ship it\n- [x] Parser\n- [ ] Tests');
     expect((await posted(page, 'brief')).at(-1).value).toBe('Ship it\n- [x] Parser\n- [ ] Tests');
@@ -441,7 +469,8 @@ try {
     expect((await posted(page, 'backgroundStart'))[0]).toMatchObject({ value: 'Write docs' });
     checks.push('Build page: background tasks with approvals, Apply and start');
     await send(page, state({ chat: { ...idle, rules: [{ id: 'r1', effect: 'allow', kind: 'command', pattern: 'npm test', createdAt: '' }, { id: 'r2', effect: 'deny', kind: 'path', pattern: 'infra/', createdAt: '' }] }, state: { mode: 'Plan', draft: '', brief: '' } }));
-    await page.getByRole('tab', { name: 'Rules' }).click();
+    await send(page, { type: 'connections' });
+    await page.getByRole('navigation', { name: 'Settings' }).getByRole('button', { name: 'Rules' }).click();
     await expect(page.locator('.rule')).toHaveText([/Run “npm test” without asking/, /Never read or change infra\//]);
     await page.getByLabel('Rule effect').selectOption('deny');
     await page.getByLabel('Rule pattern').fill('git push'); await page.getByLabel('Rule type').selectOption('command');
@@ -449,12 +478,16 @@ try {
     expect((await posted(page, 'ruleAdd'))[0]).toMatchObject({ effect: 'deny', kind: 'command', pattern: 'git push' });
     await page.getByRole('button', { name: /Remove rule: Never read/ }).click();
     expect((await posted(page, 'ruleRemove'))[0]).toMatchObject({ id: 'r2' });
-    await page.getByRole('tab', { name: 'Activity' }).click();
+    await page.getByRole('navigation', { name: 'Settings' }).getByRole('button', { name: 'Activity' }).click();
     await expect.poll(async () => (await posted(page, 'auditLoad')).length).toBe(1);
     await send(page, { type: 'audit', entries: [{ time: new Date().toISOString(), event: 'tool', tool: 'run_command', title: 'Ran npm test (exit 0)', status: 'done', decision: 'project rule: command npm test' }] });
     await expect(page.locator('.activity-title')).toHaveText('Ran npm test (exit 0)');
     await expect(page.locator('.activity small')).toHaveText('project rule: command npm test');
     await page.screenshot({ path: path.join(artifacts, 'activity.png') });
+    // Changing mode keeps Settings open; on a mode page, it shows the new mode's page.
+    await send(page, state({ chat: idle, state: { mode: 'Build', draft: '', brief: '' } }));
+    await expect(page.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('tab', { name: 'Build' }).click();
     await send(page, state({ chat: idle, state: { mode: 'Research', draft: '', brief: '' } }));
     await expect(page.getByRole('tab', { name: 'Research' })).toHaveAttribute('aria-selected', 'true');
     checks.push('workspace view pages: plan progress and Build from Plan; saved rules list/add/remove; activity log; switching mode shows its page');

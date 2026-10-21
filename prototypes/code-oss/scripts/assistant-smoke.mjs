@@ -24,20 +24,21 @@ try {
     await home.getByRole('tab', { name: 'API keys', exact: true }).click();
     await home.getByLabel('API key', { exact: true }).fill('test-only-key');
     await home.getByRole('button', { name: 'Connect API Key', exact: true }).click();
-    await expect(panel.getByLabel('Active model')).toContainText('openai: gpt-fixture');
-    await panel.getByLabel('Active model').selectOption('openai/gpt-fixture');
+    await panel.getByRole('button', { name: 'Active model' }).click();
+    await panel.getByRole('option', { name: /^openai: gpt-fixture/ }).click();
+    await expect(panel.getByRole('button', { name: 'Active model' })).toContainText('openai: gpt-fixture');
     await stage('send-ready');
     await test.page.screenshot({ path: path.join(test.artifacts, 'connections.png') });
-    await home.getByRole('button', { name: 'Close Connections', exact: true }).click();
+    await home.getByRole('button', { name: 'Done', exact: true }).click();
     await panel.getByLabel('Conversation draft').fill('Please change the current file.');
     await panel.getByRole('button', { name: 'Send', exact: true }).click();
     await stage('edit-approval');
     await test.page.screenshot({ path: path.join(test.artifacts, 'approval.png') });
-    await panel.getByRole('button', { name: 'Approve', exact: true }).click();
+    await panel.locator('#approval-bar').getByRole('button', { name: 'Approve', exact: true }).click(); // The bar above the message box.
     await stage('create-approval');
     await panel.getByRole('button', { name: 'Always allow edits in this chat', exact: true }).click();
     await stage('command-approval');
-    await panel.getByRole('button', { name: 'Approve', exact: true }).click();
+    await panel.locator('.step.waiting').getByRole('button', { name: 'Approve', exact: true }).click(); // The step's own approval card.
     await stage('complete'); const first = await report();
     // Nothing in the message list may be wider than the panel.
     const wide = await panel.evaluate(() => {
