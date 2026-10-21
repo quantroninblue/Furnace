@@ -1,0 +1,85 @@
+// End-to-end check of the in-app updater's install step on a real macOS or Windows runner
+// (.github/workflows/release.yml), using the build just made as the "new" version:
+//   node scripts/update-smoke.mjs darwin <Furnace.app> <Furnace-darwin-arm64.zip>
+//   node scripts/update-smoke.mjs win32 <FurnaceUserSetup-x64.exe>
+// Installs Furnace, starts it, stages the update and starts the install script exactly as Update →
+// Restart Now does, then ends Furnace's whole process tree. Passes when the install script survives
+// that, installs the update, and Furnace opens again.
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdir, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+
+const require = createRequire(import.meta.url);
+const updater = require('../product/updater.cjs');
+const [platform, ...args] = process.argv.slice(2);
+const work = path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'furnace-update-smoke');
+const dir = path.join(work, 'update'), profile = path.join(work, 'profile');
+await rm(work, { recursive: true, force: true });
+await mkdir(dir, { recursive: true });
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function waitFor(what, check, seconds) {
+    for (let i = 0; i < seconds; i++) { if (check()) return; await sleep(1000); }
+    const log = path.join(dir, 'install.log');
+    throw new Error(`Timed out waiting for ${what}.${existsSync(log) ? `\ninstall.log:\n${readFileSync(log, 'utf8')}` : ''}`);
+}
+const running = pattern => {
+    try {
+        return platform === 'darwin'
+            ? execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' }).trim() !== ''
+            : execFileSync('tasklist', ['/FI', `IMAGENAME eq ${pattern}`], { encoding: 'utf8' }).includes(pattern);
+    } catch { return false; }
+};
+
+if (platform === 'darwin') {
+    const [built, zip] = args;
+    const bundle = path.join(work, 'Applications', path.basename(built));
+    await mkdir(path.dirname(bundle), { recursive: true });
+    execFileSync('ditto', [built, bundle]);
+    const binary = path.join(bundle, 'Contents/MacOS', execFileSync('ls', [path.join(bundle, 'Contents/MacOS')], { encoding: 'utf8' }).trim());
+    const furnace = spawn(binary, ['--user-data-dir', profile, '--skip-welcome', '--disable-updates', '--new-window'], { detached: true, stdio: 'ignore' });
+    await sleep(10000);
+    // Marks the installed copy; the update must replace the whole bundle.
+    writeFileSync(path.join(bundle, 'Contents/Resources/update-smoke-marker'), 'old');
+    const target = updater.installTarget({ platform, appRoot: path.join(bundle, 'Contents/Resources/app') });
+    if (!target.ok) throw new Error(target.reason);
+    const staged = await updater.stage(target, zip, dir);
+    await updater.startInstaller({ target, staged, dir, pid: furnace.pid });
+    await updater.requestRelaunch(dir);
+    process.kill(-furnace.pid, 'SIGTERM'); // Furnace's whole process group, as quitting does.
+    await waitFor('the update to install', () => existsSync(path.join(dir, 'install.log')) && readFileSync(path.join(dir, 'install.log'), 'utf8').includes('installed'), 120);
+    if (existsSync(path.join(bundle, 'Contents/Resources/update-smoke-marker'))) throw new Error('The old app is still in place.');
+    execFileSync('codesign', ['--verify', '--deep', '--strict', bundle], { stdio: 'inherit' });
+    await waitFor('Furnace to open again', () => running(binary), 60);
+    execFileSync('pkill', ['-f', binary]);
+    console.log(`macOS update install PASS:\n${readFileSync(path.join(dir, 'install.log'), 'utf8')}`);
+} else if (platform === 'win32') {
+    const [setup] = args;
+    execFileSync(setup, ['/verysilent', '/suppressmsgboxes', '/norestart', '/mergetasks=!runcode'], { stdio: 'inherit' });
+    const installDir = path.join(process.env.LOCALAPPDATA, 'Programs', 'Furnace'), exe = path.join(installDir, 'Furnace.exe');
+    const target = updater.installTarget({ platform, execPath: exe });
+    if (!target.ok) throw new Error(target.reason);
+    // Marks the installed copy: a normal (not background) install deletes resources\app\out first.
+    const appDir = [installDir, ...readdirSync(installDir).map(name => path.join(installDir, name))].map(base => path.join(base, 'resources', 'app')).find(app => existsSync(path.join(app, 'out')));
+    if (!appDir) throw new Error(`No resources\\app\\out under ${installDir}`);
+    const marker = path.join(appDir, 'out', 'update-smoke-marker');
+    const furnace = spawn(exe, ['--user-data-dir', profile, '--skip-welcome', '--disable-updates', '--new-window'], { detached: true, stdio: 'ignore' });
+    await sleep(15000);
+    writeFileSync(marker, 'old');
+    const staged = await updater.stage(target, setup, dir);
+    await updater.startInstaller({ target, staged, dir, pid: furnace.pid });
+    await updater.requestRelaunch(dir);
+    // End Furnace's whole process tree: the install script, started through WMI, must survive it.
+    execFileSync('taskkill', ['/PID', String(furnace.pid), '/T', '/F'], { stdio: 'inherit' });
+    await waitFor('the installer to finish', () => existsSync(path.join(dir, 'install.log')) && /installer exited with/.test(readFileSync(path.join(dir, 'install.log'), 'utf8')), 300);
+    const log = readFileSync(path.join(dir, 'install.log'), 'utf8');
+    if (!/installer exited with 0/.test(log)) throw new Error(`The installer failed:\n${log}\n${existsSync(path.join(dir, 'install.log.setup.txt')) ? readFileSync(path.join(dir, 'install.log.setup.txt'), 'utf8').slice(-4000) : ''}`);
+    if (existsSync(marker)) throw new Error('Furnace was not reinstalled (the old files are still there).');
+    await waitFor('Furnace to open again', () => running('Furnace.exe'), 60);
+    execFileSync('taskkill', ['/IM', 'Furnace.exe', '/T', '/F'], { stdio: 'inherit' });
+    console.log(`Windows update install PASS:\n${log}`);
+} else {
+    throw new Error('Usage: node scripts/update-smoke.mjs darwin <app> <zip> | win32 <setup.exe>');
+}

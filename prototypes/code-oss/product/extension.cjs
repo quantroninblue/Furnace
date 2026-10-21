@@ -462,7 +462,9 @@ exports.activate = async context => {
         const timer = setTimeout(() => { void tutorial.welcome().catch(error => log('warn', `Tutorial: ${error.message}`)); }, 1500);
         context.subscriptions.push({ dispose: () => clearTimeout(timer) });
     }
-    // Daily update check, only when this build names a feed (package.json "updates.feed").
+    // Remove a finished update's downloads; then the daily update check, only when this build
+    // names a feed (package.json "updates.feed").
+    void support.cleanUpdates().catch(() => {});
     if (!process.env.AI_GUI_TEST_NO_DISCOVERY) { const timer = setTimeout(() => { void support.checkForUpdates(false).catch(() => {}); }, 30000); context.subscriptions.push({ dispose: () => clearTimeout(timer) }); }
     void themes.start().catch(error => log('warn', `Themes: ${error.message}`));
     log('info', `Activated (Code OSS ${vscode.version}).`);
