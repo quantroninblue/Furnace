@@ -1,4 +1,4 @@
-// Shared steps of the release builds (scripts/package-macos.mjs, scripts/package-windows.mjs).
+// Shared steps of the release builds (scripts/package-macos.mjs, package-windows.mjs, package-linux.mjs).
 import { execFileSync } from 'node:child_process';
 import { cp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -20,6 +20,7 @@ const releaseProduct = {
     dataFolderName: '.furnace', sharedDataFolderName: '.furnace-shared', serverDataFolderName: '.furnace-server',
     serverApplicationName: 'furnace-server', tunnelApplicationName: 'furnace-tunnel', urlProtocol: 'furnace',
     darwinBundleIdentifier: 'io.github.quantroninblue.furnace',
+    linuxDesktopName: 'io.github.quantroninblue.Furnace', linuxIconName: 'furnace',
     darwinProfileUUID: 'BD243F3C-D13A-440C-9349-4FF90F59A869', darwinProfilePayloadUUID: 'B68D4BC2-AEA8-47C9-A864-6F1F8F18E9EE',
     win32DirName: 'Furnace', win32NameVersion: 'Furnace', win32RegValueName: 'Furnace', win32ShellNameShort: '&Furnace',
     win32AppUserModelId: 'quantroninblue.Furnace', win32MutexName: 'furnace',

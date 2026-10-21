@@ -2,6 +2,7 @@
 // (.github/workflows/release.yml), using the build just made as the "new" version:
 //   node scripts/update-smoke.mjs darwin <Furnace.app> <Furnace-darwin-arm64.zip>
 //   node scripts/update-smoke.mjs win32 <FurnaceUserSetup-x64.exe>
+//   node scripts/update-smoke.mjs linux <Furnace-linux-x64.deb>   (under xvfb-run; sudo stands in for pkexec)
 // Installs Furnace, starts it, stages the update and starts the install script exactly as Update →
 // Restart Now does, then ends Furnace's whole process tree. Passes when the install script survives
 // that, installs the update, and Furnace opens again.
@@ -27,7 +28,7 @@ async function waitFor(what, check, seconds) {
 }
 const running = pattern => {
     try {
-        return platform === 'darwin'
+        return platform !== 'win32'
             ? execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' }).trim() !== ''
             : execFileSync('tasklist', ['/FI', `IMAGENAME eq ${pattern}`], { encoding: 'utf8' }).includes(pattern);
     } catch { return false; }
@@ -80,6 +81,30 @@ if (platform === 'darwin') {
     await waitFor('Furnace to open again', () => running('Furnace.exe'), 60);
     execFileSync('taskkill', ['/IM', 'Furnace.exe', '/T', '/F'], { stdio: 'inherit' });
     console.log(`Windows update install PASS:\n${log}`);
+} else if (platform === 'linux') {
+    const [deb] = args.map(file => path.resolve(file));
+    execFileSync('sudo', ['apt-get', 'install', '-y', deb], { stdio: 'inherit' });
+    const target = updater.installTarget({ platform, appRoot: '/usr/share/furnace/resources/app' });
+    if (!target.ok || target.package !== 'deb') throw new Error(target.reason || `Expected a .deb install, found ${target.package}`);
+    // A Furnace main process to quit (the test display comes from xvfb-run).
+    const furnace = spawn('/usr/share/furnace/furnace', ['--user-data-dir', profile, '--skip-welcome', '--disable-updates', '--new-window'], { detached: true, stdio: 'ignore', env: updater.cleanEnvironment() });
+    await sleep(15000);
+    // Marks the installed copy: remove a packaged file, which reinstalling the package restores.
+    const packaged = '/usr/share/furnace/resources/app/extensions/furnace-workspace/package.json';
+    const marker = '/usr/share/furnace/resources/app/extensions/furnace-workspace/media/fonts/inter-LICENSE.txt';
+    if (!existsSync(packaged) || !existsSync(marker)) throw new Error('The installed package is missing Furnace files.');
+    execFileSync('sudo', ['rm', marker]);
+    const staged = await updater.stage(target, deb, dir);
+    await updater.startInstaller({ target, staged, dir, pid: furnace.pid, elevate: ['sudo', '-n'] });
+    await updater.requestRelaunch(dir);
+    process.kill(-furnace.pid, 'SIGTERM');
+    await waitFor('the package to install', () => existsSync(path.join(dir, 'install.log')) && /package install exited with/.test(readFileSync(path.join(dir, 'install.log'), 'utf8')), 300);
+    const log = readFileSync(path.join(dir, 'install.log'), 'utf8');
+    if (!/package install exited with 0/.test(log)) throw new Error(`The package install failed:\n${log}`);
+    if (!existsSync(marker)) throw new Error('The package was not reinstalled (a removed file is still missing).');
+    await waitFor('Furnace to open again', () => running('/usr/share/furnace/furnace'), 60);
+    execFileSync('pkill', ['-f', '/usr/share/furnace/furnace']);
+    console.log(`Linux update install PASS:\n${log}`);
 } else {
-    throw new Error('Usage: node scripts/update-smoke.mjs darwin <app> <zip> | win32 <setup.exe>');
+    throw new Error('Usage: node scripts/update-smoke.mjs darwin <app> <zip> | win32 <setup.exe> | linux <deb>');
 }

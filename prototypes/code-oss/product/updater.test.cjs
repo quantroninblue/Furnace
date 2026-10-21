@@ -59,7 +59,7 @@ test('Furnace replaces itself only from an installed, writable location', () => 
     const execPath = 'C:\\Users\\a\\AppData\\Local\\Programs\\Furnace\\Furnace.exe';
     assert.deepEqual(updater.installTarget({ platform: 'win32', execPath, exists: file => file.endsWith('unins000.exe') }), { ok: true, platform: 'win32', installDir: 'C:\\Users\\a\\AppData\\Local\\Programs\\Furnace' });
     assert.match(updater.installTarget({ platform: 'win32', execPath, exists: () => false }).reason, /installer/);
-    assert.match(updater.installTarget({ platform: 'linux', appRoot }).reason, /macOS and Windows/);
+    assert.match(updater.installTarget({ platform: 'freebsd', appRoot }).reason, /macOS, Windows and Linux/);
 });
 
 test('downloads are kept only when their size and SHA-256 match the feed', async () => {
@@ -140,4 +140,45 @@ test('the installer starts detached: through sh on macOS, through WMI on Windows
     assert.match(fs.readFileSync(win.script, 'utf8'), /Wait-Process -Id 8/);
     const failing = (file, args) => { const proc = child(); setImmediate(() => proc.emit('exit', 1)); return proc; };
     await assert.rejects(updater.startInstaller({ target: { platform: 'win32' }, staged: 'C:\\s.exe', dir, pid: 8, spawner: failing }), /Could not start the installer/);
+});
+
+test('Linux: only a Furnace .deb or .rpm install updates itself, through pkexec', () => {
+    const appRoot = '/usr/share/furnace/resources/app';
+    const exists = file => file === '/usr/bin/pkexec';
+    assert.deepEqual(updater.installTarget({ platform: 'linux', appRoot, exists, owner: () => 'deb' }), { ok: true, platform: 'linux', package: 'deb', installDir: '/usr/share/furnace' });
+    assert.equal(updater.installTarget({ platform: 'linux', appRoot, exists, owner: () => 'rpm' }).package, 'rpm');
+    assert.match(updater.installTarget({ platform: 'linux', appRoot, exists, owner: () => null }).reason, /\.deb or \.rpm/);
+    assert.match(updater.installTarget({ platform: 'linux', appRoot: '/home/a/furnace/resources/app', exists, owner: () => 'deb' }).reason, /\.deb or \.rpm/);
+    assert.match(updater.installTarget({ platform: 'linux', appRoot, exists: () => false, owner: () => 'deb' }).reason, /pkexec/);
+    assert.equal(updater.packageOwner('/usr/share/furnace', file => file === '/var/lib/dpkg/info/furnace.list'), 'deb');
+    assert.equal(updater.packageOwner('/usr/share/furnace', () => false, () => {}), 'rpm');
+    assert.equal(updater.packageOwner('/usr/share/furnace', () => false, () => { throw new Error('not installed'); }), null);
+    assert.equal(updater.assetKey({ platform: 'linux', package: 'deb' }, 'x64'), 'linux-x64-deb');
+    assert.equal(updater.assetKey({ platform: 'darwin' }, 'arm64'), 'darwin-arm64');
+    const asset = feed.assets['darwin-arm64'];
+    assert.deepEqual(Object.keys(updater.readFeed({ ...feed, assets: { 'linux-x64-deb': asset, 'linux-x64-rpm': asset } }).assets), ['linux-x64-deb', 'linux-x64-rpm']);
+});
+
+test('the Linux install script installs the package as root once Furnace exits, then reopens it after Restart Now', { skip: process.platform === 'win32' }, async () => {
+    for (const [kind, relaunch] of [['deb', true], ['rpm', false]]) {
+        const dir = temp(), calls = path.join(dir, 'calls'), opened = path.join(dir, 'opened');
+        const elevate = path.join(dir, 'pkexec'), launcher = path.join(dir, 'furnace');
+        fs.writeFileSync(elevate, `#!/bin/sh\necho "$@" >> '${calls}'\nexit 0\n`, { mode: 0o755 });
+        fs.writeFileSync(launcher, `#!/bin/sh\necho launched > '${opened}'\n`, { mode: 0o755 });
+        const pid = Number(execFileSync('/bin/sh', ['-c', 'sleep 1 >/dev/null 2>&1 & echo $!'], { encoding: 'utf8' }));
+        const flag = updater.relaunchFlag(dir), log = path.join(dir, 'install.log');
+        if (relaunch) await updater.requestRelaunch(dir);
+        const file = path.join(dir, `Furnace linux.${kind}`);
+        execFileSync('/bin/sh', ['-c', updater.linuxScript({ pid, file, kind, flag, log, elevate: [elevate], launcher })]);
+        const call = fs.readFileSync(calls, 'utf8');
+        if (kind === 'deb') assert.match(call, new RegExp(`apt-get install -y --reinstall --allow-downgrades ${file}`));
+        else assert.match(call, /(dnf install -y|zypper|rpm -U)/);
+        assert.match(fs.readFileSync(log, 'utf8'), /package install exited with 0/);
+        for (let i = 0; i < 20 && relaunch && !fs.existsSync(opened); i++) await new Promise(resolve => setTimeout(resolve, 50));
+        assert.equal(fs.existsSync(opened), relaunch);
+    }
+});
+
+test('install scripts start without the extension host\'s Electron and VS Code variables', () => {
+    assert.deepEqual(updater.cleanEnvironment({ PATH: '/bin', DISPLAY: ':0', ELECTRON_RUN_AS_NODE: '1', VSCODE_PID: '9', HOME: '/h' }), { PATH: '/bin', DISPLAY: ':0', HOME: '/h' });
 });

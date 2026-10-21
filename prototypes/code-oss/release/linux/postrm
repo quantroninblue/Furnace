@@ -1,0 +1,7 @@
+#!/bin/sh
+# Furnace .deb: after removal. Only the command link and the desktop and MIME databases; your
+# settings and conversations in ~/.config/Furnace stay until you delete them.
+if [ "$1" = remove ] || [ "$1" = purge ]; then rm -f /usr/bin/furnace; fi
+if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q || true; fi
+if command -v update-mime-database >/dev/null 2>&1; then update-mime-database /usr/share/mime || true; fi
+exit 0

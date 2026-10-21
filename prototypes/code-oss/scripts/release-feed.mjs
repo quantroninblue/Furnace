@@ -1,6 +1,7 @@
 // Writes the signed update feed for a release (run by .github/workflows/release.yml).
 //   FURNACE_UPDATE_KEY=<Ed25519 private key, PEM> node scripts/release-feed.mjs <version> <dir> [notes]
-// <dir> holds the release downloads (Furnace-darwin-arm64.zip, FurnaceUserSetup-x64.exe). Writes
+// <dir> holds the release downloads (Furnace-darwin-arm64.zip, FurnaceUserSetup-x64.exe,
+// Furnace-linux-x64.deb and .rpm). Writes
 // <dir>/latest.json (each platform's download with its size and SHA-256) and <dir>/latest.json.sig
 // (Ed25519 over the exact bytes), then checks the signature against release/update-key.pem, the
 // public key every build carries, so a wrong key fails the release instead of every update.
@@ -12,7 +13,10 @@ import { root } from './environment.mjs';
 import { updateRepository } from './release.mjs';
 
 // The file each platform's updater installs (product/updater.cjs).
-export const downloads = { 'darwin-arm64': 'Furnace-darwin-arm64.zip', 'win32-x64': 'FurnaceUserSetup-x64.exe' };
+export const downloads = {
+    'darwin-arm64': 'Furnace-darwin-arm64.zip', 'win32-x64': 'FurnaceUserSetup-x64.exe',
+    'linux-x64-deb': 'Furnace-linux-x64.deb', 'linux-x64-rpm': 'Furnace-linux-x64.rpm',
+};
 
 async function sha256(file) {
     const hash = crypto.createHash('sha256');

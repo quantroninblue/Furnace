@@ -1,8 +1,8 @@
 # Furnace release: release builds of the pinned Code OSS with the Furnace extension built in, for
-# macOS (Apple Silicon, ad-hoc signed .dmg, not notarized) and Windows (x64 per-user installer, not
-# code-signed), from the same commit.
+# macOS (Apple Silicon, ad-hoc signed .dmg, not notarized), Windows (x64 per-user installer, not
+# code-signed) and Linux (x64 .deb and .rpm), from the same commit.
 #
-# A tag like v0.2.0 (matching the version in prototypes/code-oss/product/package.json) builds both,
+# A tag like v0.2.0 (matching the version in prototypes/code-oss/product/package.json) builds all three,
 # then makes a DRAFT GitHub Release with the downloads and the signed update feed (latest.json and
 # latest.json.sig). Nothing reaches testers until the draft is published by hand; publishing makes it
 # the release that releases/latest/download/latest.json points to, so installed copies offer it.
@@ -241,9 +241,132 @@ jobs:
       - name: Update installs in place (quit, reinstall, reopen)
         run: node prototypes/code-oss/scripts/update-smoke.mjs win32 "$(cygpath -w prototypes/code-oss/.cache/dist/FurnaceUserSetup-x64.exe)"
 
+  linux:
+    name: Linux (x64)
+    # Ubuntu 22.04 (glibc 2.35): the packages run on Ubuntu 22.04+, Debian 12+ and Fedora 36+.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      UPSTREAM: prototypes/code-oss/upstream
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the upstream pin
+        id: pin
+        run: |
+          echo "tag=$(node -p "require('./prototypes/code-oss/upstream-pin.json').tag")" >> "$GITHUB_OUTPUT"
+          echo "node=$(node -p "require('./prototypes/code-oss/upstream-pin.json').node")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.pin.outputs.node }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build tools and disk
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libx11-dev libxkbfile-dev libsecret-1-dev libkrb5-dev \
+            fakeroot rpm dpkg-dev xvfb libgtk-3-0 libgbm1 libnss3 libasound2
+          python3 -m pip install setuptools
+          df -h .
+
+      - name: Fetch the pinned Code OSS source
+        run: git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" https://github.com/microsoft/vscode.git "$UPSTREAM"
+
+      - name: Patch upstream and set the Furnace product identity and icons
+        run: node prototypes/code-oss/scripts/package-linux.mjs prepare
+
+      - name: Install Code OSS dependencies
+        working-directory: ${{ env.UPSTREAM }}
+        env:
+          npm_config_arch: x64
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          for i in 1 2 3; do
+            npm ci && exit 0
+            echo "npm ci failed (attempt $i), retrying"
+          done
+          exit 1
+
+      - name: Build and package Code OSS (linux-x64, minified)
+        working-directory: ${{ env.UPSTREAM }}
+        run: npm run gulp vscode-linux-x64-min
+
+      - name: Build Furnace (with the Landlock command sandbox)
+        run: |
+          npm ci
+          npm run build
+          test -x prototypes/code-oss/.cache/product/sandbox/ai-gui-sandbox
+
+      - name: Assemble Furnace into the app
+        run: node prototypes/code-oss/scripts/package-linux.mjs assemble x64
+
+      - name: Build the .deb and .rpm
+        working-directory: ${{ env.UPSTREAM }}
+        run: |
+          npm run gulp vscode-linux-x64-prepare-deb
+          npm run gulp vscode-linux-x64-prepare-rpm
+          node ../scripts/package-linux.mjs packaging x64
+          npm run gulp vscode-linux-x64-build-deb
+          npm run gulp vscode-linux-x64-build-rpm
+          node ../scripts/package-linux.mjs collect x64
+          dpkg-deb --info ../.cache/dist/Furnace-linux-x64.deb
+          rpm -qip ../.cache/dist/Furnace-linux-x64.rpm
+
+      # Upload before the checks, so a failing check still leaves the build to inspect.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Furnace-linux-x64
+          path: |
+            prototypes/code-oss/.cache/dist/Furnace-linux-x64.deb
+            prototypes/code-oss/.cache/dist/Furnace-linux-x64.rpm
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Furnace tests on Linux
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Smoke test the installed .deb
+        run: |
+          sudo apt-get install -y ./prototypes/code-oss/.cache/dist/Furnace-linux-x64.deb
+          # No Microsoft repository or key; the command link and the setuid sandbox helper are in place.
+          if ls /etc/apt/sources.list.d/ | grep -qi vscode; then echo "the package added a VS Code repository"; exit 1; fi
+          test ! -e /usr/share/keyrings/microsoft.gpg
+          test -L /usr/bin/furnace
+          test "$(stat -c '%a %U' /usr/share/furnace/chrome-sandbox)" = "4755 root"
+          # The app entry refuses host entries outside its built-in extensions.
+          echo "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/ran', 'yes')" > "$RUNNER_TEMP/outside.cjs"
+          if xvfb-run -a /usr/share/furnace/furnace "$RUNNER_TEMP/outside.cjs" --assistant-service "$RUNNER_TEMP" 2> "$RUNNER_TEMP/refused.txt"; then echo "outside entry was not refused"; exit 1; fi
+          grep -q 'refusing to run' "$RUNNER_TEMP/refused.txt"
+          test ! -e "$RUNNER_TEMP/ran"
+          # The release build carries the update feed and its public key.
+          grep -q 'releases/latest/download/latest.json' /usr/share/furnace/resources/app/extensions/furnace-workspace/package.json
+          # The editor starts with the Furnace extension and stays up.
+          profile="$RUNNER_TEMP/profile"
+          xvfb-run -a /usr/share/furnace/furnace --user-data-dir "$profile/data" --extensions-dir "$profile/extensions" --skip-welcome --disable-updates --new-window &
+          sleep 60
+          pgrep -f /usr/share/furnace/furnace > /dev/null || { echo "Furnace exited during startup"; exit 1; }
+          grep -rq 'ai-gui.workspace-product' "$profile/data/logs" || { echo "Furnace extension not seen in the logs"; exit 1; }
+          pkill -f /usr/share/furnace/furnace || true
+
+      - name: Update installs in place (quit, reinstall the package, reopen)
+        run: xvfb-run -a node prototypes/code-oss/scripts/update-smoke.mjs linux prototypes/code-oss/.cache/dist/Furnace-linux-x64.deb
+
+      - name: The .rpm installs on Fedora
+        run: |
+          docker run --rm -v "$PWD/prototypes/code-oss/.cache/dist:/dist:ro" fedora:41 sh -c \
+            'dnf install -y /dist/Furnace-linux-x64.rpm && test -L /usr/bin/furnace && test -u /usr/share/furnace/chrome-sandbox && test -e /usr/share/furnace/resources/app/extensions/furnace-workspace/package.json'
+
   release:
     name: Draft release
-    needs: [macos, windows]
+    needs: [macos, windows, linux]
     # Only plain version tags (v0.2.0) become releases; v0.2.0-test1 and manual runs only build.
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     runs-on: ubuntu-24.04
@@ -280,7 +403,7 @@ jobs:
         run: |
           state="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
           if [ "$state" = false ]; then echo "$TAG is already published; make a new version instead."; exit 1; fi
-          files=(dist/Furnace-darwin-arm64.dmg dist/Furnace-darwin-arm64.zip dist/FurnaceUserSetup-x64.exe dist/latest.json dist/latest.json.sig)
+          files=(dist/Furnace-darwin-arm64.dmg dist/Furnace-darwin-arm64.zip dist/FurnaceUserSetup-x64.exe dist/Furnace-linux-x64.deb dist/Furnace-linux-x64.rpm dist/latest.json dist/latest.json.sig)
           if [ "$state" = missing ]; then
             cat > notes.md <<EOF
           ## Furnace $VERSION
@@ -290,6 +413,7 @@ jobs:
           ### Install
           - **macOS (Apple Silicon):** download \`Furnace-darwin-arm64.dmg\`, drag Furnace to Applications, then open it with System Settings → Privacy & Security → **Open Anyway** (Furnace isn't notarized yet).
           - **Windows (x64):** run \`FurnaceUserSetup-x64.exe\`. If SmartScreen appears, choose **More info → Run anyway** (the installer isn't code-signed yet).
+          - **Linux (x64):** Ubuntu or Debian: \`sudo apt install ./Furnace-linux-x64.deb\`. Fedora: \`sudo dnf install ./Furnace-linux-x64.rpm\`.
 
           Already using Furnace 0.2.0 or later? It offers this update by itself and installs it in place.
           EOF
