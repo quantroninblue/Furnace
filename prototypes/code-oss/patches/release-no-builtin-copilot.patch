@@ -1,0 +1,31 @@
+diff --git a/build/gulpfile.vscode.ts b/build/gulpfile.vscode.ts
+index 95ae1790..54c0c52f 100644
+--- a/build/gulpfile.vscode.ts
++++ b/build/gulpfile.vscode.ts
+@@ -552,6 +552,10 @@ function prepareCopilotRipgrepShimTask(platform: string, arch: string, destinati
+ 		const appNodeModulesDir = path.join(appBase, 'node_modules.asar.unpacked');
+ 
+ 		const builtInCopilotExtensionDir = path.join(appBase, 'extensions', 'copilot');
++		// Furnace release patch: no built-in Copilot extension to prepare.
++		if (!fs.existsSync(builtInCopilotExtensionDir)) {
++			return;
++		}
+ 		prepareBuiltInCopilotRipgrepShim(platform, arch, builtInCopilotExtensionDir, appNodeModulesDir);
+ 	};
+ }
+diff --git a/build/lib/extensions.ts b/build/lib/extensions.ts
+index 10bd9fbd..89869812 100644
+--- a/build/lib/extensions.ts
++++ b/build/lib/extensions.ts
+@@ -467,6 +467,11 @@ function doPackageLocalExtensionsStream(forWeb: boolean, native: boolean): Strea
+  */
+ export function packageCopilotExtensionStream(): Stream {
+ 	const extensionPath = path.join(root, 'extensions', 'copilot');
++	// Furnace release patch (patches/release-no-builtin-copilot.patch): Furnace has its own agent and
++	// turns the built-in AI features off, so release builds ship without the Copilot extension.
++	if (extensionPath) {
++		return es.readArray([]);
++	}
+ 	if (!fs.existsSync(extensionPath)) {
+ 		return es.readArray([]);
+ 	}

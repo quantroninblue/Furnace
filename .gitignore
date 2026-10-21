@@ -20,3 +20,7 @@ playwright-report/
 
 # Retained original app and migration reference; local only.
 /legacy/
+
+# Release build output (scripts/package-macos.mjs, scripts/package-windows.mjs).
+/prototypes/code-oss/VSCode-darwin-*/
+/prototypes/code-oss/VSCode-win32-*/
