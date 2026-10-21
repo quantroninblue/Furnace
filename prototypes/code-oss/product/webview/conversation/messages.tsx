@@ -17,7 +17,7 @@ const withCitations = (message: ChatMessage) => message.citations?.length
 function Sources({ citations }: { citations: NonNullable<ChatMessage["citations"]> }) {
   return (
     <div className="citations" aria-label="Sources cited">
-      <span className="context-label">SOURCES</span>
+      <span className="context-label">Sources</span>
       {citations.map(item => <a key={item.key} href={item.url} title={item.url}><b>{item.key}</b> {item.title}</a>)}
     </div>
   );
@@ -25,14 +25,38 @@ function Sources({ citations }: { citations: NonNullable<ChatMessage["citations"
 
 // What the agent is doing right now, for the byline of a live reply.
 function liveState(message: ChatMessage) {
-  if (message.state === "running") return "RUNNING";
-  if (message.phase === "condensing") return "CONDENSING CONTEXT";
+  if (message.state === "running") return "Running";
+  if (message.phase === "condensing") return "Condensing context";
   const steps = message.steps || [];
-  if (steps.some(step => step.status === "waiting")) return "WAITING FOR YOU";
+  if (steps.some(step => step.status === "waiting")) return "Waiting for you";
   const task = message.autocompute?.tasks.find(item => item.state === "running" || item.state === "checking");
-  if (task) return task.state === "checking" ? "CHECKING LOCAL WORK" : `LOCAL · ${task.model.slice(task.model.indexOf("/") + 1)}`;
-  if (steps.some(step => step.status === "running")) return "WORKING";
-  return message.content ? "WRITING" : message.reasoning ? "REASONING" : "THINKING";
+  if (task) return task.state === "checking" ? "Checking local work" : `Local · ${task.model.slice(task.model.indexOf("/") + 1)}`;
+  if (steps.some(step => step.status === "running")) return "Working";
+  return message.content ? "Writing" : message.reasoning ? "Reasoning" : "Thinking";
+}
+
+// One line at the top of a finished reply: what changed and whether its last command and checks passed.
+function Outcome({ message }: { message: ChatMessage }) {
+  const files = (message.changes?.files || []).filter(file => !file.reverted);
+  const runs = (message.steps || []).filter(step => (step.tool === "run_command" || step.tool === "verify_step") && /\(exit -?\d+\)$/.test(step.title));
+  const checks = runs.filter(step => step.tool === "verify_step");
+  const last = runs.filter(step => step.tool === "run_command").at(-1);
+  const parts: string[] = [];
+  if (files.length) {
+    const added = files.reduce((sum, file) => sum + file.added, 0), removed = files.reduce((sum, file) => sum + file.removed, 0);
+    parts.push(`${files.length} file${files.length === 1 ? "" : "s"} changed${added || removed ? ` (+${added} −${removed})` : ""}`);
+  }
+  let failed = false;
+  if (last) {
+    const exit = Number(/\(exit (-?\d+)\)$/.exec(last.title)![1]), command = last.title.replace(/^Ran /, "").replace(/ \(exit -?\d+\)$/, "");
+    failed = exit !== 0;
+    parts.push(`${command.length > 40 ? `${command.slice(0, 39)}…` : command} ${exit === 0 ? "passed" : `failed (exit ${exit})`}`);
+  }
+  const passed = checks.filter(step => step.title.endsWith("(exit 0)")).length, missed = checks.length - passed;
+  if (passed) parts.push(`${passed} check${passed === 1 ? "" : "s"} verified`);
+  if (missed) { failed = true; parts.push(`${missed} check${missed === 1 ? "" : "s"} failed`); }
+  if (!parts.length) return null;
+  return <p className={`outcome${failed ? " failed" : ""}`} aria-label="Outcome of this reply"><span aria-hidden="true">{failed ? "✕" : "✓"}</span> {parts.join(" · ")}</p>;
 }
 
 // The model's reasoning: open and following the newest text until the answer starts, then collapsed.
@@ -93,6 +117,7 @@ const Message = memo(function Message({ message, models, busy, latest, condensed
       <div className="message-body">
         {message.cwd && user && <small className="muted">{message.cwd}</small>}
         {!user && message.reasoning ? <Reasoning text={message.reasoning} thinking={live && !message.content} /> : null}
+        {!live && !user && !command && message.steps?.length ? <Outcome message={message} /> : null}
         {message.steps?.length ? <Steps steps={message.steps} finished={!live} startedAt={message.startedAt} endedAt={message.endedAt} /> : null}
         {message.autocompute?.tasks.length ? <Delegated message={message} /> : null}
         {message.unbacked === "retrying" && <p className="unbacked-note" role="status">Tasks were marked done, but no file changed and no command ran. Asked the model to do the work.</p>}

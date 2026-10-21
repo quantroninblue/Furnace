@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { ChatState, Mode, ResearchState, Usage } from "../protocol";
+import type { ChatState, Mode, Model, ResearchState, Usage } from "../protocol";
 import { Icon } from "../icons";
+import { InfoTip, Menu, type MenuItem } from "../menu";
 import { currentMessages, post, setHistoryOpen, setNote, setPrefs, setTimelineOpen, useStore, useSyncedText } from "../store";
 import { money } from "./messages";
 
@@ -11,11 +12,11 @@ export const modeNotes: Record<Mode, string> = {
 type Command = { name: string; hint?: string; description: string; run: (arg: string) => void };
 type Option = { key: string; label: string; hint?: string; description?: string; icon?: "folder" | "file"; run: () => void };
 
-function Chip({ label, on, toggle, remove, disabled, title }: { label: string; on: boolean; toggle: () => void; remove?: () => void; disabled?: boolean; title?: string }) {
+function Chip({ label, remove, title, tone }: { label: string; remove?: () => void; title?: string; tone?: "warn" }) {
   return (
-    <span className={`context-chip${on ? " included" : ""}${disabled ? " disabled" : ""}`}>
-      <button aria-pressed={on} disabled={disabled} onClick={toggle} title={title || (on ? "Included with the next message. Click to stop sharing." : "Click to include with the next message.")}>{label}</button>
-      {remove && <button className="chip-remove" aria-label={`Remove ${label}`} onClick={remove}>×</button>}
+    <span className={`context-chip included${tone ? ` ${tone}` : ""}`} title={title}>
+      <span className="chip-label">{label}</span>
+      {remove && <button className="chip-remove" aria-label={`Stop sharing ${label}`} title="Stop sharing" onClick={remove}><Icon name="close" size={10} /></button>}
     </span>
   );
 }
@@ -36,14 +37,16 @@ function Autocompute({ chat }: { chat: ChatState }) {
   const state = chat.autocompute;
   if (!state) return null;
   const locals = state.locals.map(id => id.slice(id.indexOf("/") + 1)).join(", ");
-  const title = !state.enabled ? `Autocompute: your online model plans and reviews, and gives small tasks (tests, small edits, docs) to local Ollama models to save online usage. ${locals ? `Local models available: ${locals}.` : "No local model with tool calling is connected yet."} Tick to turn it on.`
-    : state.ready ? `Autocompute is on: your online model plans and reviews; small tasks go to ${locals}, within what each model has proven it can do.`
-    : `Autocompute is on, but can't run: ${state.reason}`;
+  const tip = !state.enabled ? <>Your online model plans and reviews, and gives small tasks (tests, small edits, docs) to local Ollama models to save online usage. {locals ? `Local models available: ${locals}.` : "No local model with tool calling is connected yet."}</>
+    : state.ready ? <>On: your online model plans and reviews; small tasks go to {locals}, within what each model has proven it can do.</>
+    : <>On, but can&apos;t run: {state.reason}</>;
   return (
-    <label className={`autocompute-toggle${state.enabled ? state.ready ? " on" : " warn" : ""}`} title={title}>
-      <input id="autocompute" type="checkbox" checked={state.enabled} disabled={chat.busy} onChange={event => post({ type: "autocompute", enabled: event.target.checked })} />
-      Autocompute{state.enabled && !state.ready ? " ⚠" : ""}
-    </label>
+    <InfoTip tip={tip} align="start" className="autocompute-tip">
+      <label className={`autocompute-toggle${state.enabled ? state.ready ? " on" : " warn" : ""}`}>
+        <input id="autocompute" type="checkbox" checked={state.enabled} disabled={chat.busy} onChange={event => post({ type: "autocompute", enabled: event.target.checked })} />
+        Autocompute{state.enabled && !state.ready ? " ⚠" : ""}
+      </label>
+    </InfoTip>
   );
 }
 
@@ -51,17 +54,19 @@ const thousands = (value: number) => value >= 10000 ? `${Math.round(value / 1000
 // How full the model's context window is for the next message (estimated), with what fills it.
 function ContextMeter({ usage, busy }: { usage: Usage; busy: boolean }) {
   const percent = Math.min(100, Math.round((usage.used / usage.window) * 100));
-  const title = [`Context for the next message: about ${thousands(usage.used)} of ${thousands(usage.window)} tokens (${percent}%).`,
+  const lines = [`Context for the next message: about ${thousands(usage.used)} of ${thousands(usage.window)} tokens (${percent}%).`,
     `Instructions and tools ~${thousands(usage.system)} · conversation ~${thousands(usage.history)} · shared context ~${thousands(usage.shared)}.`,
     usage.condensed ? `Earlier messages condensed ${usage.condensed} time${usage.condensed === 1 ? "" : "s"}.` : "Older messages are summarised automatically when the conversation fills 60% of the window.",
     usage.measured ? `Last reply: ${thousands(usage.measured.input)} input tokens measured by the provider.` : "",
     usage.source === "counted" ? "Counted with the provider's own tokenizer." : usage.source === "calibrated" ? "Estimate corrected by the provider's count for the last reply." : "Estimated (about 4 characters per token).",
-    "Click to condense the conversation now (/compact)."].filter(Boolean).join("\n");
+    "Click to condense the conversation now (/compact)."].filter(Boolean);
   return (
-    <button id="context-meter" className={`context-meter${percent >= 80 ? " high" : percent >= 60 ? " medium" : ""}`} disabled={busy} title={title} aria-label={`Context ${percent}% used. Condense now`}
-      onClick={() => post({ type: "compact" })}>
-      <span className="meter-track"><span className="meter-fill" style={{ width: `${Math.max(2, percent)}%` }} /></span>{percent}%
-    </button>
+    <InfoTip tip={<>{lines.map(line => <span key={line} className="tip-line">{line}</span>)}</>} className="meter-tip">
+      <button id="context-meter" className={`context-meter${percent >= 80 ? " high" : percent >= 60 ? " medium" : ""}`} disabled={busy} aria-label={`Context ${percent}% used. Condense now`}
+        onClick={() => post({ type: "compact" })}>
+        <span className="meter-track"><span className="meter-fill" style={{ width: `${Math.max(2, percent)}%` }} /></span>{percent}%
+      </button>
+    </InfoTip>
   );
 }
 
@@ -75,12 +80,35 @@ function Spend({ chat }: { chat: ChatState }) {
   if (plan) parts.push(`plan ${Math.round(plan.usedPercent)}% used`);
   if (!parts.length) return null;
   const level = budget > 0 ? month >= budget ? " over" : month >= budget * 0.8 ? " near" : "" : "";
-  const title = [chat.cost ? `Estimated from provider-reported tokens at list prices${chat.cost.unpriced ? `; ${chat.cost.unpriced} repl${chat.cost.unpriced === 1 ? "y has" : "ies have"} no known price (set aiGui.pricing)` : ""}.` : "",
+  const lines = [chat.cost ? `Estimated from provider-reported tokens at list prices${chat.cost.unpriced ? `; ${chat.cost.unpriced} repl${chat.cost.unpriced === 1 ? "y has" : "ies have"} no known price (set aiGui.pricing)` : ""}.` : "",
     month ? `API spend from this machine this month: ${money(month)} (today ${money(chat.spend?.today.total || 0)}).` : "",
     budget ? `Monthly budget ${money(budget)} (aiGui.budget.monthlyUsd)${level === " over" ? ": exceeded" : level === " near" ? ": over 80% used" : ""}.` : "Set a monthly budget with aiGui.budget.monthlyUsd.",
-    plan ? `ChatGPT plan: ${Math.round(plan.usedPercent)}% of the ${plan.windowMinutes ? `${Math.round(plan.windowMinutes / 60)}-hour` : "current"} window used${plan.resetSeconds ? `, resets in ${Math.ceil(plan.resetSeconds / 60)} min` : ""}.` : ""].filter(Boolean).join("\n");
-  return <span id="spend" className={`spend${level}`} title={title}>{parts.join(" · ")}{level === " over" ? " · over budget" : ""}</span>;
+    plan ? `ChatGPT plan: ${Math.round(plan.usedPercent)}% of the ${plan.windowMinutes ? `${Math.round(plan.windowMinutes / 60)}-hour` : "current"} window used${plan.resetSeconds ? `, resets in ${Math.ceil(plan.resetSeconds / 60)} min` : ""}.` : ""].filter(Boolean);
+  return (
+    <InfoTip tip={<>{lines.map(line => <span key={line} className="tip-line">{line}</span>)}</>} align="start" className="spend-tip">
+      <span id="spend" tabIndex={0} className={`spend${level}`}>{parts.join(" · ")}{level === " over" ? " · over budget" : ""}</span>
+    </InfoTip>
+  );
 }
+
+// Models grouped by how they are billed, with what each one accepts.
+const providers: [string, string][] = [["chatgpt/", "ChatGPT plan"], ["claude-code/", "Claude Code"], ["openai/", "OpenAI API"], ["anthropic/", "Anthropic API"]];
+const providerOf = (id: string) => providers.find(([prefix]) => id.startsWith(prefix))?.[1] ?? "Local · Ollama";
+function modelItems(models: Model[], current: string): MenuItem[] {
+  const items: MenuItem[] = [];
+  for (const group of [...providers.map(([, name]) => name), "Local · Ollama"]) {
+    const inGroup = models.filter(model => providerOf(model.id) === group);
+    if (!inGroup.length) continue;
+    items.push({ kind: "heading", label: group });
+    for (const model of inGroup) items.push({ key: model.id, label: model.name, checked: model.id === current, onSelect: () => post({ type: "model", value: model.id }),
+      badges: [model.size, model.vision ? "images" : "", model.tools === false ? "no tools" : ""].filter((badge): badge is string => !!badge) });
+  }
+  items.push({ kind: "heading", label: models.length ? "More" : "No model connected" });
+  items.push({ key: "connections", label: "Manage connections…", description: "ChatGPT, Claude Code, API keys or Ollama", onSelect: () => post({ type: "connections" }) });
+  return items;
+}
+const modeTone: Record<Mode, string> = { Discuss: "discuss", Plan: "plan", Build: "build", Research: "research" };
+const placeholders: Record<Mode, string> = { Discuss: "Talk it through", Plan: "What should we plan?", Build: "Describe the change", Research: "What should we look into?" };
 
 // The @mention or slash token being typed at the cursor.
 function tokenAt(text: string, caret: number) {
@@ -194,8 +222,41 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
   }
   const billing = run ? "Runs with your user permissions" : chat.model.startsWith("chatgpt/") ? "Using ChatGPT plan" : /^(openai|anthropic)\//.test(chat.model) ? "Using provider API billing"
     : chat.model.startsWith("claude-code/") ? "Using Claude Code account" : chat.model ? "Using local Ollama" : "No model selected";
-  const permissionTitle = { ask: "Ask first: every change, command and web fetch needs approval.", auto: `Auto: project edits apply directly; ${chat.agent?.sandbox ? "commands run sandboxed (project + temp writes, no network)" : "commands ask first (sandbox unavailable)"}.`, full: "Full access: no approvals, no sandbox." }[chat.permission];
+  const permissions: { value: ChatState["permission"]; label: string; description: string }[] = [
+    { value: "ask", label: "Ask first", description: "Every change, command and web fetch needs your approval." },
+    { value: "auto", label: "Auto", description: chat.agent?.sandbox ? "Project edits apply directly; commands run sandboxed (project and temp writes, no network)." : "Project edits apply directly; commands ask first (no sandbox here)." },
+    { value: "full", label: "Full access", description: "No approvals and no sandbox. For trusted tasks you are watching." },
+  ];
   const info = chat.contextInfo, running = chat.processes.filter(item => item.status === "running");
+  const share = (field: "shareEditor" | "shareSelection" | "shareDiff" | "shareProblems" | "sharePlan", enabled: boolean) => post({ type: "context", field, enabled });
+  // Everything that can go with the next message, plus adding files and switching to Run.
+  const contextItems: MenuItem[] = [
+    { kind: "heading", label: "Share with the next message" },
+    { key: "editor", label: "Current document", description: "The active editor, including unsaved changes", checked: chat.shareEditor, onSelect: () => share("shareEditor", !chat.shareEditor) },
+    { key: "selection", label: info?.selection ? `Selection ${info.selection.label}` : "Selection", description: info?.selection ? "The text selected in the editor" : "Select text in an editor to share it", checked: chat.shareSelection, disabled: !info?.selection && !chat.shareSelection, onSelect: () => share("shareSelection", !chat.shareSelection) },
+    { key: "diff", label: "Git changes", description: "git status and the diff against the last commit", checked: chat.shareDiff, onSelect: () => share("shareDiff", !chat.shareDiff) },
+    { key: "problems", label: `Problems${info ? ` (${info.problems.count})` : ""}`, description: "Errors and warnings from the Problems panel", checked: chat.shareProblems, onSelect: () => share("shareProblems", !chat.shareProblems) },
+    { key: "plan", label: "Planning brief", description: "The brief on the Plan page", checked: chat.sharePlan, onSelect: () => share("sharePlan", !chat.sharePlan) },
+    ...research.sources.map((source): MenuItem => ({ key: `source-${source.id}`, label: source.title || source.url, description: "Research source", checked: source.shared, onSelect: () => post({ type: "sourceShare", id: source.id, enabled: !source.shared }) })),
+    ...chat.attachments.map((item): MenuItem => ({ key: `attachment-${item.id}`, label: item.name, description: item.readable ? "Attachment" : "File only: no text to share", checked: item.shared, disabled: !item.readable, onSelect: () => post({ type: "attachmentShare", id: item.id, enabled: !item.shared }) })),
+    { kind: "heading", label: "Add" },
+    { key: "attach", label: "Attach files…", description: "Copied into the project's attachments folder", onSelect: () => post({ type: "attach" }) },
+    { key: "mention", label: "Mention a file or folder", description: "Type @ in the message", onSelect: () => update(`${draft}${draft && !/\s$/.test(draft) ? " " : ""}@`, true) },
+    { kind: "heading", label: "Message box" },
+    { key: "ask", label: "Ask the agent", checked: !run, onSelect: () => setInput("ask") },
+    { key: "run", label: "Run a command yourself", description: "In this project, with your user permissions", checked: run, onSelect: () => setInput("run") },
+  ];
+  const included = [
+    chat.shareEditor && <Chip key="editor" label="Current document" title="The active editor, including unsaved changes" remove={() => share("shareEditor", false)} />,
+    chat.shareSelection && <Chip key="selection" label={info?.selection ? `Selection ${info.selection.label}` : "Selection"} remove={() => share("shareSelection", false)} />,
+    chat.shareDiff && <Chip key="diff" label="Git changes" remove={() => share("shareDiff", false)} />,
+    chat.shareProblems && <Chip key="problems" label={`Problems${info ? ` (${info.problems.count})` : ""}`} remove={() => share("shareProblems", false)} />,
+    chat.sharePlan && <Chip key="plan" label="Planning brief" remove={() => share("sharePlan", false)} />,
+    ...research.sources.filter(source => source.shared).map(source => <Chip key={source.id} label={source.title || source.url} title={source.url} remove={() => post({ type: "sourceShare", id: source.id, enabled: false })} />),
+    ...chat.attachments.filter(item => item.shared).map(item => <Chip key={item.id} label={item.name} remove={() => post({ type: "attachmentShare", id: item.id, enabled: false })} />),
+    ...chat.images.map(item => <Chip key={item.id} label={`🖼 ${item.name}`} title="Pasted image: sent with your next message only." remove={() => post({ type: "removeImage", id: item.id })} />),
+  ].filter(Boolean);
+  const current = models.find(model => model.id === chat.model);
 
   return (
     <>
@@ -228,7 +289,7 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
       )}
       {chat.queue.length > 0 && (
         <div className="queue" aria-label="Queued messages">
-          <div className="context-label"><Icon name="clock" size={11} /> {chat.queuePaused ? "QUEUED · PAUSED AFTER THE LAST REPLY STOPPED" : "QUEUED · SENT WHEN THE CURRENT REPLY FINISHES"}</div>
+          <div className="context-label"><Icon name="clock" size={11} /> {chat.queuePaused ? "Queued · paused after the last reply stopped" : "Queued · sent when the current reply finishes"}</div>
           {chat.queue.map(item => (
             <div key={item.id} className="queue-row">
               <span title={item.text}>{item.text}</span>
@@ -238,36 +299,16 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
           ))}
         </div>
       )}
-      <div className="context-area">
-        <div className="context-label"><Icon name="layers" size={11} /> CONTEXT FOR NEXT MESSAGE <span className="context-tip">· @ adds files</span></div>
-        <div id="chips" className="context-chips">
-          <Chip label="Current document" on={chat.shareEditor} title="The active editor, including unsaved changes." toggle={() => post({ type: "context", field: "shareEditor", enabled: !chat.shareEditor })} />
-          <Chip label={info?.selection ? `Selection ${info.selection.label}` : "Selection"} on={chat.shareSelection} disabled={!info?.selection && !chat.shareSelection}
-            title={info?.selection ? "The text selected in the editor." : "Select text in an editor to share it."} toggle={() => post({ type: "context", field: "shareSelection", enabled: !chat.shareSelection })} />
-          <Chip label="Git changes" on={chat.shareDiff} title="git status and the diff of the working tree against the last commit." toggle={() => post({ type: "context", field: "shareDiff", enabled: !chat.shareDiff })} />
-          <Chip label={`Problems${info ? ` (${info.problems.count})` : ""}`} on={chat.shareProblems} title="Errors and warnings from the Problems panel." toggle={() => post({ type: "context", field: "shareProblems", enabled: !chat.shareProblems })} />
-          <Chip label="Planning brief" on={chat.sharePlan} toggle={() => post({ type: "context", field: "sharePlan", enabled: !chat.sharePlan })} />
-          {research.sources.map(source => <Chip key={source.id} label={source.title || source.url} on={source.shared} title={source.url}
-            toggle={() => post({ type: "sourceShare", id: source.id, enabled: !source.shared })} remove={() => post({ type: "sourceRemove", id: source.id })} />)}
-          {chat.attachments.map(item => <Chip key={item.id} label={item.readable ? item.name : `${item.name} · file only`} on={item.shared} disabled={!item.readable}
-            title={item.readable ? undefined : "No extracted text; this file cannot be shared as context."}
-            toggle={() => post({ type: "attachmentShare", id: item.id, enabled: !item.shared })} remove={() => post({ type: "attachmentRemove", id: item.id })} />)}
-          {chat.untrusted?.length > 0 && <span id="untrusted" className="context-chip untrusted" title={`Untrusted content is in this chat: ${chat.untrusted.join(", ")}. Commands and web access always ask, and “always allow” is off. Start a new chat or stop sharing the source to clear it.`}>⚠ Untrusted content in this chat</span>}
-          {chat.images.map(item => <Chip key={item.id} label={`🖼 ${item.name}`} on title="Pasted image: sent with your next message only." toggle={() => {}} remove={() => post({ type: "removeImage", id: item.id })} />)}
-        </div>
-      </div>
-      <div className="agent-bar">
-        <label className="permission" title="What the agent may do without asking"><Icon name="shield" size={12} />
-          <select id="permission" aria-label="Permissions" title={permissionTitle} value={chat.permission} disabled={chat.busy} onChange={event => post({ type: "permission", value: event.target.value as ChatState["permission"] })}>
-            <option value="ask">Ask first</option><option value="auto">Auto</option><option value="full">Full access</option>
-          </select>
-        </label>
-        {mode === "Build" && <Autocompute chat={chat} />}
-        <AgentState chat={chat} mode={mode} />
-      </div>
-      <div className="composer">
-        <textarea id="draft" ref={field} aria-label="Conversation draft" maxLength={20000} rows={3} value={draft}
-          placeholder={run ? "Run a command in this project, e.g. npm test" : chat.busy ? "Type to queue a message for when this reply finishes…" : "Ask anything, @ to add files, / for commands…"}
+      <div id="composer" className={`composer${run ? " run" : ""}`} data-mode={modeTone[mode]}>
+        {(included.length > 0 || chat.untrusted?.length > 0) && (
+          <div id="chips" className="context-chips" aria-label="Shared with the next message">
+            {included}
+            {chat.untrusted?.length > 0 && <InfoTip tip={`Untrusted content is in this chat: ${chat.untrusted.join(", ")}. Commands and web access always ask, and “always allow” is off. Start a new chat or stop sharing the source to clear it.`} align="start">
+              <span id="untrusted" tabIndex={0} className="context-chip untrusted">⚠ Untrusted content in this chat</span></InfoTip>}
+          </div>
+        )}
+        <textarea id="draft" ref={field} aria-label="Conversation draft" maxLength={20000} rows={2} value={draft}
+          placeholder={run ? "Run a command in this project, e.g. npm test" : chat.busy ? "Type to queue a message for when this reply finishes…" : `${placeholders[mode]}… @ adds files, / for commands`}
           onChange={event => update(event.target.value, false, event.target.selectionStart)}
           onSelect={event => setCaret(event.currentTarget.selectionStart)}
           onPaste={event => { void paste(event); }}
@@ -280,23 +321,32 @@ export function Composer({ chat, research, mode, draft: serverDraft }: { chat: C
             }
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (canSend || draft.trim().startsWith("/")) submit(); }
           }} />
-        <div className="composer-actions">
-          <div className="input-mode" role="group" aria-label="Input mode">
-            <button aria-pressed={!run} title="Ask the assistant" onClick={() => setInput("ask")}>Ask</button>
-            <button aria-pressed={run} title="Run a shell command in this project" onClick={() => setInput("run")}>Run</button>
+        <div className="composer-footer">
+          <div className="composer-controls">
+            <Menu id="context-menu" className="context-menu icon-only" label="Context and attachments" title="Share context, attach files, or run a command yourself" items={contextItems}
+              trigger={<><Icon name="plus" size={14} />{run && <span className="run-flag">Run</span>}</>} />
+            <Menu id="mode-menu" className={`mode-menu ${modeTone[mode]}`} label="Mode" title="What the agent can do (Alt+1…4)" disabled={chat.busy}
+              trigger={<><span className="mode-dot" aria-hidden="true" />{mode}</>}
+              items={(["Discuss", "Plan", "Build", "Research"] as Mode[]).map((name, index): MenuItem => ({ key: name, label: name, description: modeNotes[name].split(" · ")[1], badges: [`Alt+${index + 1}`], checked: name === mode, onSelect: () => post({ type: "mode", value: name }) }))} />
+            <Menu id="permission" className={`permission-menu${chat.permission === "full" ? " full" : ""}`} label="Permissions" title="What the agent may do without asking" disabled={chat.busy}
+              trigger={<><Icon name="shield" size={12} />{permissions.find(item => item.value === chat.permission)?.label}</>}
+              items={permissions.map((item): MenuItem => ({ key: item.value, label: item.label, description: item.description, checked: item.value === chat.permission, tone: item.value === "full" ? "warn" : undefined, onSelect: () => post({ type: "permission", value: item.value }) }))} />
+            {mode === "Build" && <Autocompute chat={chat} />}
           </div>
-          <button className="icon-button" aria-label="Attach Files" title="Attach files (/attach). Paste images with Ctrl+V." onClick={() => post({ type: "attach" })}><Icon name="clip" size={14} /></button>
-          <select id="model" className="composer-model" aria-label="Active model" title="Your choice is remembered for this mode" value={chat.model || ""} disabled={chat.busy} onChange={event => post({ type: "model", value: event.target.value })}>
-            <option value="">{models.length ? "Choose a model" : "No model connected"}</option>
-            {models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
-          </select>
-          {chat.busy && !run && draft.trim() && <button id="queue" className="send-button queueing" aria-label="Queue" title="Queue: send when the current reply finishes (Enter)" onClick={submit}><Icon name="clock" size={14} /></button>}
-          {chat.busy
-            ? <button id="stop" className="send-button stopping" aria-label="Stop" title="Stop (Escape)" onClick={() => post({ type: "stop" })}><Icon name="stop" size={14} /></button>
-            : <button id="send" className="send-button" aria-label="Send" title="Send (Enter)" disabled={!canSend} onClick={submit}><Icon name="up" size={15} /></button>}
+          <div className="composer-send">
+            <Menu id="model" className="model-menu" label="Active model" title="Your choice is remembered for this mode" disabled={chat.busy} align="end"
+              trigger={<span className="model-name">{current?.name || (models.length ? "Choose a model" : "No model connected")}</span>} items={modelItems(models, chat.model)} />
+            {chat.busy && !run && draft.trim() && <button id="queue" className="send-button queueing" aria-label="Queue" title="Queue: send when the current reply finishes (Enter)" onClick={submit}><Icon name="clock" size={14} /></button>}
+            {chat.busy
+              ? <button id="stop" className="send-button stopping" aria-label="Stop" title="Stop (Escape)" onClick={() => post({ type: "stop" })}><Icon name="stop" size={14} /></button>
+              : <button id="send" className="send-button" aria-label={run ? "Run" : "Send"} title={run ? "Run (Enter)" : "Send (Enter)"} disabled={!canSend} onClick={submit}><Icon name={run ? "play" : "up"} size={15} /></button>}
+          </div>
         </div>
       </div>
-      <div className="composer-hint"><span id="billing">{billing}</span>{!run && <Spend chat={chat} />}{chat.usage && !run ? <ContextMeter usage={chat.usage} busy={chat.busy} /> : <span title="Enter sends · Shift+Enter adds a line · Escape stops">/ for commands</span>}</div>
+      <div className="composer-hint">
+        <AgentState chat={chat} mode={mode} />
+        <span className="hint-right"><span id="billing">{billing}</span>{!run && <Spend chat={chat} />}{chat.usage && !run ? <ContextMeter usage={chat.usage} busy={chat.busy} /> : null}</span>
+      </div>
     </>
   );
 }
