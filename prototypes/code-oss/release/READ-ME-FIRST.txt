@@ -1,0 +1,23 @@
+Furnace test build for macOS (Apple Silicon, macOS 13 or later)
+
+Install
+1. Drag Furnace into the Applications folder.
+2. Open Furnace. macOS says it cannot verify the app, because this test
+   build is not notarized by Apple. Click Done (not Move to Trash).
+3. Open System Settings > Privacy & Security, scroll down to the message
+   about Furnace and click Open Anyway, then confirm.
+   (Or, in Terminal: xattr -dr com.apple.quarantine /Applications/Furnace.app)
+4. The first time you save a sign-in or key, macOS asks whether Furnace may
+   use its keychain item (Safe Storage). Click Always Allow.
+
+Use
+- Bring your own model: sign in with ChatGPT (Plus or Pro), use the Claude
+  Code CLI, add an API key, or run Ollama locally. Furnace has no account or
+  server of its own and sends nothing to us.
+- Start in "Ask first" permissions until you trust how the agent works; Auto
+  runs commands in a macOS sandbox (project and temp folders only, no network).
+- Open a project folder and trust it, then give the agent a small task.
+
+Feedback
+- Type /diagnostics in the chat to copy a report (no keys or conversations)
+  and send it with a note about what you tried and what happened.
