@@ -24,3 +24,6 @@ playwright-report/
 # Release build output (scripts/package-macos.mjs, scripts/package-windows.mjs).
 /prototypes/code-oss/VSCode-darwin-*/
 /prototypes/code-oss/VSCode-win32-*/
+
+# The update signing key (private; see release-feed.mjs). Never commit it.
+/furnace-update-signing-key.txt
