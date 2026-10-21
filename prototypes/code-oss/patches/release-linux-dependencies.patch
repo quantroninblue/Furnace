@@ -7,7 +7,7 @@ index 8d886549..71150c60 100644
  // The reference dependencies, which one has to update when the new dependencies
  // are valid, are in dep-lists.ts
 -const FAIL_BUILD_FOR_NEW_DEPENDENCIES: boolean = true;
-+// Furnace builds natively on Ubuntu 22.04 rather than against the glibc 2.28 sysroot, so its
++// Furnace builds natively on Ubuntu 24.04 rather than against the glibc 2.28 sysroot, so its
 +// dependency list differs from VS Code's reference list; it is still generated from the binaries.
 +const FAIL_BUILD_FOR_NEW_DEPENDENCIES: boolean = false;
  
