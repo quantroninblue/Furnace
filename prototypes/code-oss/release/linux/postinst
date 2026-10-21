@@ -1,0 +1,13 @@
+#!/bin/sh
+# Furnace .deb: after install or upgrade.
+set -e
+ln -sf /usr/share/furnace/bin/furnace /usr/bin/furnace
+# Chromium's sandbox helper must be setuid root where unprivileged user namespaces are
+# restricted (Ubuntu 24.04 and later); otherwise Furnace cannot start.
+if [ -f /usr/share/furnace/chrome-sandbox ]; then
+	chown root:root /usr/share/furnace/chrome-sandbox
+	chmod 4755 /usr/share/furnace/chrome-sandbox
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q || true; fi
+if command -v update-mime-database >/dev/null 2>&1; then update-mime-database /usr/share/mime || true; fi
+exit 0

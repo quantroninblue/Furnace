@@ -9,7 +9,9 @@
 // Installing: the download is staged next to Furnace's data, and a small detached script waits for
 // Furnace's main process to exit, then puts the new version in place:
 //   macOS   swaps the .app bundle (the old one is kept until the new one is in place, then removed);
-//   Windows runs the Inno Setup user installer silently over the existing install.
+//   Windows runs the Inno Setup user installer silently over the existing install;
+//   Linux   installs the new .deb or .rpm with the system's package manager, through pkexec, which
+//           asks for the user's password (installing a package needs root).
 // A "relaunch" flag file, written by Restart Now, decides whether Furnace opens again afterwards.
 const crypto = require('node:crypto');
 const { execFile, spawn } = require('node:child_process');
@@ -30,6 +32,8 @@ function newer(candidate, current) {
 
 /** The feed key for this machine's download, for example "darwin-arm64" or "win32-x64". */
 const platformKey = (platform = process.platform, arch = process.arch) => `${platform}-${arch}`;
+/** The feed key for an install target: Linux adds its package type ("linux-x64-deb"). */
+const assetKey = (target, arch = process.arch) => target.package ? `${platformKey(target.platform, arch)}-${target.package}` : platformKey(target.platform, arch);
 
 /**
  * Validates an update feed: { version, url, notes?, assets? } with an https release page. Each asset
@@ -41,7 +45,7 @@ function readFeed(value) {
     if (url.protocol !== 'https:') throw new Error('The update feed must link to an https page.');
     const assets = {};
     for (const [key, asset] of Object.entries(value.assets && typeof value.assets === 'object' ? value.assets : {})) {
-        if (!/^[a-z0-9]+-[a-z0-9]+$/.test(key) || !asset || typeof asset !== 'object') throw new Error(`The update feed has a malformed download (${key}).`);
+        if (!/^[a-z0-9]+(-[a-z0-9]+){1,2}$/.test(key) || !asset || typeof asset !== 'object') throw new Error(`The update feed has a malformed download (${key}).`);
         const download = new URL(String(asset.url || ''));
         if (download.protocol !== 'https:') throw new Error(`The ${key} download must use https.`);
         if (typeof asset.file !== 'string' || !/^[\w.-]{1,128}$/.test(asset.file) || asset.file.startsWith('.')) throw new Error(`The ${key} download has a malformed file name.`);
@@ -76,7 +80,7 @@ async function fetchFeed({ feed, publicKey }, fetcher = globalThis.fetch) {
  * Where this copy of Furnace is installed and whether it can replace itself, or why not:
  * { ok: true, platform, bundle | installDir } or { ok: false, reason }.
  */
-function installTarget({ platform = process.platform, appRoot, execPath = process.execPath, exists = fs.existsSync, writable = isWritable } = {}) {
+function installTarget({ platform = process.platform, appRoot, execPath = process.execPath, exists = fs.existsSync, writable = isWritable, owner = packageOwner } = {}) {
     if (platform === 'darwin') {
         const bundle = path.posix.resolve(appRoot || '/', '../../..');
         if (!bundle.endsWith('.app')) return { ok: false, reason: 'Furnace is not running from an app bundle.' };
@@ -90,7 +94,20 @@ function installTarget({ platform = process.platform, appRoot, execPath = proces
         if (!exists(path.win32.join(installDir, 'unins000.exe'))) return { ok: false, reason: 'This copy of Furnace was not installed with the Furnace installer.' };
         return { ok: true, platform, installDir };
     }
-    return { ok: false, reason: 'In-app updates are available on macOS and Windows.' };
+    if (platform === 'linux') {
+        const installDir = path.posix.resolve(appRoot || '/', '../..');
+        const kind = installDir.startsWith('/usr/share/') ? owner(installDir, exists) : null;
+        if (!kind) return { ok: false, reason: 'This copy of Furnace was not installed from the Furnace .deb or .rpm package.' };
+        if (!exists('/usr/bin/pkexec')) return { ok: false, reason: 'Installing the update needs pkexec (PolicyKit), which is not installed.' };
+        return { ok: true, platform, package: kind, installDir };
+    }
+    return { ok: false, reason: 'In-app updates are available on macOS, Windows and Linux.' };
+}
+/** Which package manager installed `installDir`: "deb", "rpm" or null. */
+function packageOwner(installDir, exists = fs.existsSync, run = require('node:child_process').execFileSync) {
+    const name = path.posix.basename(installDir);
+    if (exists(`/var/lib/dpkg/info/${name}.list`)) return 'deb';
+    try { run('rpm', ['-q', '--quiet', name], { stdio: 'ignore', timeout: 10000 }); return 'rpm'; } catch { return null; }
 }
 function isWritable(file) {
     try { fs.accessSync(file, fs.constants.W_OK); return true; } catch { return false; }
@@ -142,7 +159,7 @@ async function verified(asset, file) {
  * from the zip (with its code signature checked); on Windows the installer itself.
  */
 async function stage(target, file, dir, { run = promisify(execFile) } = {}) {
-    if (target.platform === 'win32') return file;
+    if (target.platform === 'win32' || target.platform === 'linux') return file;
     const extracted = path.join(dir, 'extracted');
     await fsp.rm(extracted, { recursive: true, force: true });
     await run('/usr/bin/ditto', ['-x', '-k', file, extracted]);
@@ -176,6 +193,32 @@ exit 0
 }
 
 /**
+ * POSIX sh script (Linux): wait for Furnace to exit, install the package as root through `elevate`
+ * (pkexec: the system asks for the user's password), then reopen Furnace when asked to, also when
+ * the install was cancelled, so Restart Now always brings Furnace back.
+ */
+function linuxScript({ pid, file, kind, flag, log, elevate = ['/usr/bin/pkexec'], launcher = '/usr/bin/furnace' }) {
+    const install = kind === 'deb'
+        ? `${elevate.map(sh).join(' ')} /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall --allow-downgrades ${sh(file)}`
+        : `if command -v dnf >/dev/null 2>&1; then ${elevate.map(sh).join(' ')} dnf install -y ${sh(file)}; `
+            + `elif command -v zypper >/dev/null 2>&1; then ${elevate.map(sh).join(' ')} zypper --non-interactive install --allow-unsigned-rpm ${sh(file)}; `
+            + `else ${elevate.map(sh).join(' ')} rpm -U --replacepkgs ${sh(file)}; fi`;
+    return `#!/bin/sh
+# Furnace update: installs ${sh(file)} once process ${pid} has exited.
+flag=${sh(flag)}
+exec >>${sh(log)} 2>&1
+echo "$(date '+%F %T') waiting for Furnace (process ${pid}) to quit"
+while kill -0 ${pid} 2>/dev/null; do sleep 1; done
+sleep 1
+${install}
+status=$?
+echo "$(date '+%F %T') package install exited with $status"
+if [ -e "$flag" ]; then rm -f "$flag"; setsid ${sh(launcher)} >/dev/null 2>&1 < /dev/null & fi
+exit $status
+`;
+}
+
+/**
  * Windows PowerShell script: wait for Furnace to exit, then run the installer silently over the
  * existing install (Inno Setup keeps the user's earlier choices; runcode reopens Furnace).
  */
@@ -199,13 +242,15 @@ exit $setup.ExitCode
  * main process). On Windows it is started through WMI, so it is not a child of Furnace and outlives
  * Furnace's process tree and job objects. Returns the script and log paths.
  */
-async function startInstaller({ target, staged, dir, pid, spawner = spawn }) {
+async function startInstaller({ target, staged, dir, pid, spawner = spawn, elevate }) {
     const flag = relaunchFlag(dir), log = path.join(dir, 'install.log');
     await fsp.rm(flag, { force: true });
-    if (target.platform === 'darwin') {
+    if (target.platform === 'darwin' || target.platform === 'linux') {
         const script = path.join(dir, 'install.sh');
-        await fsp.writeFile(script, darwinScript({ pid, bundle: target.bundle, app: staged, dir, flag, log }), { mode: 0o700 });
-        spawner('/bin/sh', [script], { detached: true, stdio: 'ignore' }).unref();
+        await fsp.writeFile(script, target.platform === 'darwin'
+            ? darwinScript({ pid, bundle: target.bundle, app: staged, dir, flag, log })
+            : linuxScript({ pid, file: staged, kind: target.package, flag, log, ...(elevate ? { elevate } : {}) }), { mode: 0o700 });
+        spawner('/bin/sh', [script], { detached: true, stdio: 'ignore', env: cleanEnvironment() }).unref();
         return { script, log };
     }
     const script = path.join(dir, 'install.ps1');
@@ -222,8 +267,12 @@ async function startInstaller({ target, staged, dir, pid, spawner = spawn }) {
     return { script, log };
 }
 
+// The extension host's environment marks Electron to run as Node (ELECTRON_RUN_AS_NODE) and carries
+// VS Code's process handles; Furnace reopened with it would not start as the app.
+const cleanEnvironment = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([key]) => !/^(ELECTRON_|VSCODE_)/.test(key)));
+
 const relaunchFlag = dir => path.join(dir, 'relaunch');
 /** Restart Now: Furnace opens again once the update is installed. */
 const requestRelaunch = dir => fsp.writeFile(relaunchFlag(dir), 'yes');
 
-module.exports = { newer, platformKey, readFeed, verifyFeed, fetchFeed, installTarget, download, verified, stage, darwinScript, windowsScript, startInstaller, requestRelaunch, relaunchFlag };
+module.exports = { newer, platformKey, assetKey, readFeed, verifyFeed, fetchFeed, installTarget, packageOwner, download, verified, stage, darwinScript, linuxScript, windowsScript, startInstaller, cleanEnvironment, requestRelaunch, relaunchFlag };

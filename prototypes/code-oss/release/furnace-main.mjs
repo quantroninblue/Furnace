@@ -1,5 +1,5 @@
-// Furnace entry for packaged builds. scripts/package-macos.mjs installs it as the app's main
-// script (Resources/app/out/furnace-main.js), next to furnace-settings.json.
+// Furnace entry for packaged builds. scripts/release.mjs installs it as the app's main script
+// (…/resources/app/out/furnace-main.js), next to furnace-settings.json.
 //
 // A packaged Electron app always runs its own app code, whatever script path it is given, so
 // the Furnace extension's assistant and research hosts, started as
@@ -30,7 +30,8 @@ if (host >= 0) {
         const product = require('../product.json');
         const custom = process.env.VSCODE_PORTABLE || process.env.VSCODE_APPDATA || process.argv.some(arg => arg === '--user-data-dir' || arg.startsWith('--user-data-dir='));
         const appData = process.platform === 'darwin' ? process.env.HOME && path.join(process.env.HOME, 'Library/Application Support')
-            : process.platform === 'win32' ? process.env.APPDATA : null;
+            : process.platform === 'win32' ? process.env.APPDATA
+            : process.env.XDG_CONFIG_HOME || (process.env.HOME && path.join(process.env.HOME, '.config'));
         if (!custom && appData) {
             const settings = path.join(appData, product.nameShort, 'User/settings.json');
             if (!fs.existsSync(settings)) {
