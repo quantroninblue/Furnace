@@ -78,11 +78,11 @@ async function fetchFeed({ feed, publicKey }, fetcher = globalThis.fetch) {
  */
 function installTarget({ platform = process.platform, appRoot, execPath = process.execPath, exists = fs.existsSync, writable = isWritable } = {}) {
     if (platform === 'darwin') {
-        const bundle = path.resolve(appRoot || '', '../../..');
+        const bundle = path.posix.resolve(appRoot || '/', '../../..');
         if (!bundle.endsWith('.app')) return { ok: false, reason: 'Furnace is not running from an app bundle.' };
         if (bundle.startsWith('/Volumes/')) return { ok: false, reason: 'Furnace is running from the disk image. Drag it to Applications first.' };
         if (bundle.includes('/AppTranslocation/')) return { ok: false, reason: 'macOS is running Furnace from a temporary copy. Move Furnace to Applications and open it from there.' };
-        if (!writable(path.dirname(bundle)) || !writable(bundle)) return { ok: false, reason: `Furnace can't replace itself in ${path.dirname(bundle)} (no write permission).` };
+        if (!writable(path.posix.dirname(bundle)) || !writable(bundle)) return { ok: false, reason: `Furnace can't replace itself in ${path.posix.dirname(bundle)} (no write permission).` };
         return { ok: true, platform, bundle };
     }
     if (platform === 'win32') {
