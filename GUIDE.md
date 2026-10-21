@@ -17,8 +17,9 @@ You can also type `/tour` or `/help` in the message box.
 
 ## Connect a model
 
-Open **Connections** from the **Connections** tab of the workspace view, the model
-name in the status bar, or by typing `/connections`. Choose a tab:
+Open **Connections** from **Settings** in the workspace view, the model name in the
+status bar, **Manage connections…** in the model menu, or by typing `/connections`.
+Choose a tab:
 
 | Tab | What you need | Billing |
 | --- | --- | --- |
@@ -27,17 +28,20 @@ name in the status bar, or by typing `/connections`. Choose a tab:
 | **Local** | [Ollama](https://ollama.com) running with a model installed. For agent work, pick a model that supports tool calling (for example Qwen or Llama 3.1+). | Free, runs on your machine |
 | **API keys** | An OpenAI or Anthropic API key. Tick **Remember securely** to keep it between sessions. | Provider API billing |
 
-Then pick a model in the model menu inside the message box. The status bar always
-shows the active model. Each mode remembers the model you last chose for it.
+Then pick a model in the model menu at the bottom right of the message box. It groups
+models by how they are billed (ChatGPT plan, Claude Code, API keys, local Ollama) and
+notes which ones accept images. The status bar always shows the active model. Each mode
+remembers the model you last chose for it.
 
 ## The workspace
 
 - **Conversation panel (right).** Just the chat: the conversation title with the
   current mode, **New chat**, **Timeline** and **History**, the messages and the
   message box.
-- **Workspace view (left).** Pages for **Start**, **Plan**, **Build**, **Research**,
-  **Rules**, **Activity** and **Connections**. Choosing Start, Plan, Build or
-  Research also sets the conversation's mode (Start is Discuss).
+- **Workspace view (left).** Pages for **Start**, **Plan**, **Build** and **Research**;
+  choosing one also sets the conversation's mode (Start is Discuss). **Settings** holds
+  **Connections**, **Rules**, **Activity**, **Shortcuts** and **About & support**
+  (Help, the tutorial, themes, updates, diagnostics, feedback and privacy).
 - **Editor, files, terminal, Git.** The usual Code OSS tools, all still available.
 
 ### Modes
@@ -49,27 +53,28 @@ shows the active model. Each mode remembers the model you last chose for it.
 | **Build** | Do the work: read, search, create, edit, move and delete files, rename symbols across files, run commands, fetch docs, keep a task checklist and prove plan steps with their checks. |
 | **Research** | Read sources you captured and shared, read your browser selection, and suggest pages. |
 
-You can also switch modes with `Alt+1`…`Alt+4` in the conversation, `Ctrl+Alt+M`, or
-`/discuss`, `/plan`, `/build`, `/research`. You can chat without opening a project.
+You can also switch modes with the mode menu in the message box, `Alt+1`…`Alt+4` in
+the conversation, `Ctrl+Alt+M`, or `/discuss`, `/plan`, `/build`, `/research`. The
+message box takes the mode's colour. You can chat without opening a project.
 Open a folder (**Open a project**) when you want the agent to work on files.
 
 ### Sharing context
 
-The chips under **Context for next message** control exactly what the agent sees
-besides the chat: the **Current document** (including unsaved changes), your
-**Selection**, **Git changes**, **Problems**, your **Planning brief**, captured
-research **sources** and imported **attachments**. Highlighted chips are included;
-click to toggle, × to remove.
+The **+** menu at the bottom left of the message box controls exactly what the agent
+sees besides the chat: the **Current document** (including unsaved changes), your
+**Selection**, **Git changes**, **Problems**, your **Planning brief**, captured research
+**sources** and imported **attachments**. What you share shows as chips in the message
+box; × on a chip stops sharing it.
 
 - Type `@` to add a file or folder from the project to your message.
 - Paste a screenshot (`Ctrl+V`) to send it with your next message only (PNG, JPEG,
   GIF or WebP up to 5 MB; the model must support images).
-- Use the paperclip or `/attach` to import files (they are copied into the
-  project's `attachments/` folder).
-- The meter next to the model shows how full the model's context window is. Long
-  conversations are condensed into a summary automatically; click the meter or use
-  `/compact` to do it now. With API keys and ChatGPT, the count comes from the
-  provider's own tokenizer.
+- Use **Attach files…** in the + menu or `/attach` to import files (they are copied
+  into the project's `attachments/` folder).
+- The meter under the message box shows how full the model's context window is (hover
+  for the details). Long conversations are condensed into a summary automatically;
+  click the meter or use `/compact` to do it now. With API keys and ChatGPT, the count
+  comes from the provider's own tokenizer.
 
 ## Working with the agent
 
@@ -83,11 +88,11 @@ output one click away.
 
 The agent only touches files in a folder you trust. If the folder isn't trusted
 yet, Furnace asks when you send your first Build or Plan message; you can also click
-**Trust Folder** above the message box. No folder open? Click **Open Folder** there.
+**Trust Folder** under the message box. No folder open? Click **Open Folder** there.
 
 ### Choose how much it may do on its own
 
-Use the permissions menu above the message box (or `/permissions`):
+Use the permissions menu in the message box (or `/permissions`):
 
 | Mode | File changes | Commands | Use it when |
 | --- | --- | --- | --- |
@@ -100,9 +105,11 @@ the project, secret files (such as `.env` and keys), the `.git` folder, or the w
 If a command needs to leave the sandbox (for example to install packages), it asks
 you, with a reason.
 
-When the agent asks, you'll see **Approve**, **Always allow … in this chat**,
-**Always allow … in this project** (saved as a rule on the **Rules** page), **Deny**
-and, for file changes, **Open Diff** to view the change in the editor.
+When the agent asks, a bar above the message box shows the question with **Approve**,
+**Deny** and **Details**, so it can't scroll out of view. The step in the reply has every
+choice: **Approve**, **Always allow … in this chat**, **Always allow … in this project**
+(saved as a rule in **Settings → Rules**), **Deny** and, for file changes, **Open Diff**
+to view the change in the editor.
 
 **Untrusted content.** Once a chat contains a web page the agent fetched, a shared
 research source or selection, an attachment or a file from outside the project, a
@@ -219,8 +226,10 @@ no selection, the current line is edited. Inline edits use the active model.
 
 Replies are formatted (headings, lists, tables, highlighted code). Code blocks have
 **Copy** and **Insert**, which puts the code at the cursor in your current editor
-(Undo reverses it). Finished work collapses into one line such as *Worked for 1m 05s ·
-15 steps*; click it to see each step. Replies never load remote images or run HTML.
+(Undo reverses it). A finished reply that did work starts with its outcome, such as
+*✓ 2 files changed (+65 −3) · npm test passed* (✕ when its last command or a check
+failed). The work itself collapses into one line such as *Worked for 1m 05s · 15 steps*;
+click it to see each step. Replies never load remote images or run HTML.
 
 When a model shares its reasoning (local Ollama models do), a **Reasoning** block shows it as
 it thinks and collapses once the answer starts. If a Build reply marks its tasks done without
@@ -370,8 +379,8 @@ Type `/` in the message box for the command list:
 - **Window opacity:** the window is very slightly see-through. Change it with
   **Display → Window Opacity…** or the `aiGui.window.opacity` setting (0.5–1; 1 is
   solid). It works on Linux with X11 and a compositing window manager.
-- The **Ask / Run** switch in the message box toggles between talking to the agent
-  and running your own commands.
+- **Run a command yourself** in the + menu switches the message box from talking to
+  the agent to running your own commands (**Ask the agent** switches back).
 - Resuming a chat restores its messages, brief, sources and attachments; shared
   context and pending approvals start fresh.
 
@@ -383,7 +392,7 @@ Type `/` in the message box for the command list:
   the brief yourself, then switch to Build and share the brief.
 - **Use Ask first in unfamiliar projects.** Switch to Auto once you are comfortable.
 - **Keep Full access short-lived.** Turn it on for a specific task, then switch back.
-- **Share only what helps.** Context chips keep prompts small and focused.
+- **Share only what helps.** Sharing only what the task needs keeps prompts small and focused.
 - **Use the terminal for interactive tools.** The agent's commands can't answer
   prompts; long-running servers belong in the editor's terminal.
 - **Commit before large changes**, so `git diff` shows exactly what the agent did.
@@ -406,5 +415,5 @@ Type `/` in the message box for the command list:
 | Inline edit says the file changed | You typed while the model worked; run the edit again. |
 | "Furnace couldn't update itself" | Choose **Download Instead** and install the new version from the Releases page. On macOS, move Furnace to Applications first if it says it is running from the disk image or a temporary copy. |
 | The Linux update didn't install | Installing needs your password; if you cancelled the prompt, Furnace offers the update again. You can also run `sudo apt install ./Furnace-linux-x64.deb` (or `sudo dnf install ./Furnace-linux-x64.rpm`) yourself. |
-| Something else went wrong | **Copy Diagnostics** (Start page or `/diagnostics`) copies versions, settings and recent errors without conversation text or keys. **Send Feedback** opens a report you can check before sending. **Furnace: Show Log** opens the log. |
+| Something else went wrong | **Copy Diagnostics** (Settings → About & support, or `/diagnostics`) copies versions, settings and recent errors without conversation text or keys. **Send Feedback** opens a report you can check before sending. **Furnace: Show Log** opens the log. |
 | Run and Debug says "All debug extensions are disabled" | The built-in debugger wasn't downloaded. Run `node scripts/setup.mjs extensions-debug builtin-extensions` in `prototypes/code-oss`, then restart. |

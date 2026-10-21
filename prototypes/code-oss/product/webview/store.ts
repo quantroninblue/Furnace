@@ -36,6 +36,7 @@ type Snapshot = {
   themeEditor: ThemeEditorState | null;
 };
 const modePage: Record<Mode, Page> = { Discuss: "start", Plan: "plan", Build: "build", Research: "research" };
+const settingsPages = new Set<Page>(["connections", "rules", "activity", "shortcuts", "about"]);
 let snapshot: Snapshot = { data: null, messages: [], prefs, note: "", page: "start", lastPage: "start", mentions: { query: "", items: [] }, history: null, historyOpen: false, audit: null, timeline: null, timelineOpen: false, orgSpend: null, tutorial: null, help: null, themeEditor: null };
 const byId = new Map<string, ChatMessage>();
 let tutorialPanes = false;
@@ -49,7 +50,7 @@ export function setPrefs(changes: Partial<ViewPrefs>) {
   prefs = { ...prefs, ...changes }; vscode.setState(prefs); emit({ prefs });
 }
 export const setNote = (note: string) => emit({ note });
-export const setPage = (page: Page) => emit(page === "connections" ? { page, lastPage: snapshot.page === "connections" ? snapshot.lastPage : snapshot.page } : { page });
+export const setPage = (page: Page) => emit(settingsPages.has(page) ? { page, lastPage: settingsPages.has(snapshot.page) ? snapshot.lastPage : snapshot.page } : { page });
 export const closeConnections = () => emit({ page: snapshot.lastPage });
 export const setHistoryOpen = (historyOpen: boolean) => emit({ historyOpen, ...(historyOpen ? { timelineOpen: false } : { history: null }) });
 export const setTimelineOpen = (timelineOpen: boolean) => { emit({ timelineOpen, ...(timelineOpen ? { historyOpen: false, history: null } : {}) }); if (timelineOpen) post({ type: "timeline" }); };
@@ -96,8 +97,8 @@ window.addEventListener("message", ({ data }: MessageEvent<ToWebview>) => {
   if (data?.type !== "state") return;
   const { type: _type, messages: sync, ...state } = data;
   const next: Partial<Snapshot> = { data: state };
-  // Switching mode shows that mode's page (unless Connections is open).
-  if (state.state.mode !== snapshot.data?.state.mode && snapshot.page !== "connections" && !snapshot.tutorial?.page) next.page = modePage[state.state.mode];
+  // Switching mode shows that mode's page (unless a Settings page is open).
+  if (state.state.mode !== snapshot.data?.state.mode && !settingsPages.has(snapshot.page) && !snapshot.tutorial?.page) next.page = modePage[state.state.mode];
   // A local note shows until the status or the chat error changes.
   if (state.status !== snapshot.data?.status || state.chat?.error !== snapshot.data?.chat?.error) next.note = "";
   if (sync) {
