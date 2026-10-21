@@ -18,6 +18,12 @@ Use
   runs commands in a macOS sandbox (project and temp folders only, no network).
 - Open a project folder and trust it, then give the agent a small task.
 
+Updates
+- Furnace checks once a day for a new version. Choose Update to download it
+  and install it in place; keep Furnace in Applications for this to work.
+- After an update macOS may ask once more about the keychain item (Safe
+  Storage). Click Always Allow.
+
 Feedback
 - Type /diagnostics in the chat to copy a report (no keys or conversations)
   and send it with a note about what you tried and what happened.

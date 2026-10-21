@@ -309,6 +309,23 @@ you'll be asked whether you trust it.
 Extensions run with your user permissions, outside Furnace's agent sandbox, so
 install only ones you trust.
 
+## Updates
+
+Furnace checks once a day whether a newer version is out (turn it off with the
+`aiGui.updates.check` setting, or check now with **Furnace: Check for Updates**). When
+there is one, a notification offers **Update**, **Release Notes** and **Skip This
+Version**.
+
+**Update** downloads the new version and checks that it is genuine before using it. Then
+choose **Restart Now** to install it and reopen Furnace, or **Later** to install it the
+next time you quit. Your settings, conversations and connections stay as they are.
+
+- **macOS:** keep Furnace in your Applications folder; Furnace can't update a copy
+  running from the disk image. After an update, macOS may ask once more whether
+  Furnace may use its keychain item; choose **Always Allow**.
+- **Windows:** the update runs the Furnace installer in the background once Furnace
+  closes, keeping the options you chose when you installed it.
+
 ## Commands and shortcuts
 
 Type `/` in the message box for the command list:
@@ -385,5 +402,6 @@ Type `/` in the message box for the command list:
 | "Background tasks need the project to be a Git repository" | Run `git init` and make a first commit, or use the normal conversation. |
 | A local model forgets earlier messages | Ollama requests use a 16k-token context window; long chats are condensed. Pick a model with a larger context for long tasks. |
 | Inline edit says the file changed | You typed while the model worked; run the edit again. |
+| "Furnace couldn't update itself" | Choose **Download Instead** and install the new version from the Releases page. On macOS, move Furnace to Applications first if it says it is running from the disk image or a temporary copy. |
 | Something else went wrong | **Copy Diagnostics** (Start page or `/diagnostics`) copies versions, settings and recent errors without conversation text or keys. **Send Feedback** opens a report you can check before sending. **Furnace: Show Log** opens the log. |
 | Run and Debug says "All debug extensions are disabled" | The built-in debugger wasn't downloaded. Run `node scripts/setup.mjs extensions-debug builtin-extensions` in `prototypes/code-oss`, then restart. |
