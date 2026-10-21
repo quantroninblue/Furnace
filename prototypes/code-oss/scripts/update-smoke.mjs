@@ -26,6 +26,14 @@ async function waitFor(what, check, seconds) {
     const log = path.join(dir, 'install.log');
     throw new Error(`Timed out waiting for ${what}.${existsSync(log) ? `\ninstall.log:\n${readFileSync(log, 'utf8')}` : ''}`);
 }
+// Ends Furnace like a quit, then forcefully if it hasn't exited after a grace period (an app sent
+// SIGTERM may take its time; the updater only needs the process gone).
+async function end(pid) {
+    const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    try { process.kill(-pid, 'SIGTERM'); } catch { /* Already gone. */ }
+    for (let i = 0; i < 10 && alive(); i++) await sleep(1000);
+    if (alive()) { console.log(`Process ${pid} ignored SIGTERM for 10 s; sending SIGKILL.`); try { process.kill(-pid, 'SIGKILL'); } catch { /* Already gone. */ } }
+}
 const running = pattern => {
     try {
         return platform !== 'win32'
@@ -49,7 +57,7 @@ if (platform === 'darwin') {
     const staged = await updater.stage(target, zip, dir);
     await updater.startInstaller({ target, staged, dir, pid: furnace.pid });
     await updater.requestRelaunch(dir);
-    process.kill(-furnace.pid, 'SIGTERM'); // Furnace's whole process group, as quitting does.
+    await end(furnace.pid); // Furnace's whole process group, as quitting does.
     await waitFor('the update to install', () => existsSync(path.join(dir, 'install.log')) && readFileSync(path.join(dir, 'install.log'), 'utf8').includes('installed'), 120);
     if (existsSync(path.join(bundle, 'Contents/Resources/update-smoke-marker'))) throw new Error('The old app is still in place.');
     execFileSync('codesign', ['--verify', '--deep', '--strict', bundle], { stdio: 'inherit' });
@@ -57,7 +65,7 @@ if (platform === 'darwin') {
     execFileSync('pkill', ['-f', binary]);
     console.log(`macOS update install PASS:\n${readFileSync(path.join(dir, 'install.log'), 'utf8')}`);
 } else if (platform === 'win32') {
-    const [setup] = args;
+    const setup = path.resolve(args[0]); // The install script runs elsewhere (System32): use a full path, as real updates do.
     execFileSync(setup, ['/verysilent', '/suppressmsgboxes', '/norestart', '/mergetasks=!runcode'], { stdio: 'inherit' });
     const installDir = path.join(process.env.LOCALAPPDATA, 'Programs', 'Furnace'), exe = path.join(installDir, 'Furnace.exe');
     const target = updater.installTarget({ platform, execPath: exe });
@@ -97,7 +105,7 @@ if (platform === 'darwin') {
     const staged = await updater.stage(target, deb, dir);
     await updater.startInstaller({ target, staged, dir, pid: furnace.pid, elevate: ['sudo', '-n'] });
     await updater.requestRelaunch(dir);
-    process.kill(-furnace.pid, 'SIGTERM');
+    await end(furnace.pid);
     await waitFor('the package to install', () => existsSync(path.join(dir, 'install.log')) && /package install exited with/.test(readFileSync(path.join(dir, 'install.log'), 'utf8')), 300);
     const log = readFileSync(path.join(dir, 'install.log'), 'utf8');
     if (!/package install exited with 0/.test(log)) throw new Error(`The package install failed:\n${log}`);

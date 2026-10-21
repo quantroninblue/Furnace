@@ -231,9 +231,21 @@ Wait-Process -Id ${pid} -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 $tasks = if (Test-Path -LiteralPath ${ps(flag)}) { 'runcode' } else { '!runcode' }
 Remove-Item -LiteralPath ${ps(flag)} -ErrorAction SilentlyContinue
-$setup = Start-Process -FilePath ${ps(setup)} -ArgumentList @('/verysilent', '/suppressmsgboxes', '/norestart', "/mergetasks=$tasks", ('/log="' + ${ps(`${log}.setup.txt`)} + '"')) -Wait -PassThru
-Add-Content -Path $log -Value "$(Get-Date -Format s) installer exited with $($setup.ExitCode)"
-exit $setup.ExitCode
+try {
+  # .NET rather than Start-Process: its exit code is always available after the wait.
+  $info = New-Object System.Diagnostics.ProcessStartInfo
+  $info.FileName = ${ps(setup)}
+  $info.Arguments = '/verysilent /suppressmsgboxes /norestart /mergetasks=' + $tasks + ' /log="' + ${ps(`${log}.setup.txt`)} + '"'
+  $info.UseShellExecute = $false
+  $setup = [System.Diagnostics.Process]::Start($info)
+  $setup.WaitForExit()
+  $code = $setup.ExitCode
+} catch {
+  Add-Content -Path $log -Value "$(Get-Date -Format s) the installer could not start: $_"
+  exit 1
+}
+Add-Content -Path $log -Value "$(Get-Date -Format s) installer exited with $code"
+exit $code
 `;
 }
 
