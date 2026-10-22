@@ -1,6 +1,6 @@
 # Private naming notes.
 /name_idea.txt
-node_modules/
+node_modules
 out/
 dist/
 coverage/
