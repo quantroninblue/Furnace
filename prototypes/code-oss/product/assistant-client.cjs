@@ -7,7 +7,9 @@ class AssistantClient {
         if (this.rpc && !this.rpc.closed) return;
         const env = { ...process.env };
         for (const key of Object.keys(env)) if (/^(ELECTRON_|VSCODE_|NODE_OPTIONS$|NODE_PATH$)/.test(key)) delete env[key];
-        const child = spawn(this.options.executable, [this.options.entry, '--assistant-service', this.options.directory], { env, stdio: ['ignore', 'ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32' });
+        // 'overlapped', not 'pipe': on Windows a non-overlapped pipe serializes I/O, so the service's waiting read
+        // blocks its reply until we send something else (same as 'pipe' elsewhere).
+        const child = spawn(this.options.executable, [this.options.entry, '--assistant-service', this.options.directory], { env, stdio: ['ignore', 'ignore', 'ignore', 'overlapped'], detached: process.platform !== 'win32' });
         this.child = child;
         // Several replies can run at once (the chat and background tasks), routed by request ID.
         this.turns ??= new Map();
