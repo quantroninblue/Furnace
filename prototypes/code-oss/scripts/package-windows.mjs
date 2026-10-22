@@ -14,7 +14,8 @@ const dist = path.join(root, '.cache/dist');
 async function assemble(arch = 'x64') {
     const output = path.join(path.dirname(upstream), `VSCode-win32-${arch}`);
     const executables = (await readdir(output)).filter(name => name.endsWith('.exe'));
-    if (!executables.includes('Furnace.exe')) throw new Error(`Expected Furnace.exe in ${output}, found: ${executables.join(', ') || 'none'}`);
+    if (!executables.includes('Furnace.exe'))
+        throw new Error(`Expected Furnace.exe in ${output}, found: ${executables.join(', ') || 'none'}`);
     await installFurnace(path.join(output, 'resources/app'), 'win32');
     console.log(`Assembled ${output}`);
 }
@@ -23,7 +24,8 @@ async function collect(arch = 'x64') {
     // Upstream's Inno Setup user installer: no administrator rights, installs per user.
     const setup = path.join(upstream, `.build/win32-${arch}/user-setup`);
     const installers = (await readdir(setup)).filter(name => name.endsWith('.exe'));
-    if (installers.length !== 1) throw new Error(`Expected one installer in ${setup}, found: ${installers.join(', ') || 'none'}`);
+    if (installers.length !== 1)
+        throw new Error(`Expected one installer in ${setup}, found: ${installers.join(', ') || 'none'}`);
     await mkdir(dist, { recursive: true });
     await cp(path.join(setup, installers[0]), path.join(dist, `FurnaceUserSetup-${arch}.exe`));
     await cp(path.join(root, 'release/READ-ME-FIRST-windows.txt'), path.join(dist, 'READ ME FIRST.txt'));

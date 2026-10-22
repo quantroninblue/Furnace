@@ -28,13 +28,22 @@ try {
     assert.doesNotMatch(body, /Activating extension .* failed|Cannot find module/);
     assert.equal(diagnostics.filter(line => line.startsWith('Renderer:')).length, 0);
     await page.screenshot({ path: path.join(run, 'project-free.png') });
-    await writeFile(path.join(run, 'result.json'), JSON.stringify({ readyMs, startupObservationMs: 12000, title: await page.title() }, null, 2));
+    await writeFile(
+        path.join(run, 'result.json'),
+        JSON.stringify({ readyMs, startupObservationMs: 12000, title: await page.title() }, null, 2),
+    );
     console.log(`PASS: Code OSS project-free launch. Evidence: ${run}`);
 } finally {
     if (app) {
         for (const [index, page] of app.windows().entries()) {
             await page.screenshot({ path: path.join(run, `final-${index}.png`) }).catch(() => {});
-            await writeFile(path.join(run, `page-${index}.txt`), await page.locator('body').innerText().catch(() => 'unavailable'));
+            await writeFile(
+                path.join(run, `page-${index}.txt`),
+                await page
+                    .locator('body')
+                    .innerText()
+                    .catch(() => 'unavailable'),
+            );
         }
     }
     await app?.close();

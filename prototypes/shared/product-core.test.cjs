@@ -11,7 +11,10 @@ function fixture() {
         readReview: review => review.text,
         releaseReview: () => {},
         apply: async (proposal, text, validate) => {
-            validate(document); document.text = text; document.version++; return true;
+            validate(document);
+            document.text = text;
+            document.version++;
+            return true;
         },
     };
     return { session, document, adapter, review: new ProductReview(session, adapter) };
@@ -29,9 +32,15 @@ test('fixture uses unsaved state; applying uses the manually revised proposal on
 });
 
 test('changed text, edit-revert, document replacement and another URI all reject', async () => {
-    for (const change of [{ text: 'concurrent edit' }, { version: 5 }, { instance: 'reopened' }, { uri: 'file:///other.txt' }]) {
+    for (const change of [
+        { text: 'concurrent edit' },
+        { version: 5 },
+        { instance: 'reopened' },
+        { uri: 'file:///other.txt' },
+    ]) {
         const { review, document } = fixture();
-        await review.proposeFixture(); Object.assign(document, change);
+        await review.proposeFixture();
+        Object.assign(document, change);
         const before = { ...document };
         await assert.rejects(review.apply(), /Document changed/);
         assert.deepEqual(document, before);
@@ -41,8 +50,13 @@ test('changed text, edit-revert, document replacement and another URI all reject
 test('a discard or scope change during asynchronous opening expires the proposal', async () => {
     const { review, adapter, session } = fixture();
     let resolve;
-    adapter.openReview = () => new Promise(done => { resolve = done; });
-    const pending = review.proposeFixture(); review.discard(); resolve({});
+    adapter.openReview = () =>
+        new Promise(done => {
+            resolve = done;
+        });
+    const pending = review.proposeFixture();
+    review.discard();
+    resolve({});
     await assert.rejects(pending, /Review expired/);
     assert.equal(session.proposal, undefined);
 });
@@ -50,7 +64,11 @@ test('a discard or scope change during asynchronous opening expires the proposal
 test('scope change while focusing the editor cannot apply the old approval', async () => {
     const { review, adapter, document } = fixture();
     await review.proposeFixture();
-    adapter.apply = async (proposal, text, validate) => { review.discard(); validate(document); return true; };
+    adapter.apply = async (proposal, text, validate) => {
+        review.discard();
+        validate(document);
+        return true;
+    };
     await assert.rejects(review.apply(), /Review expired/);
     assert.equal(document.text, 'unsaved text\n');
 });
@@ -59,7 +77,10 @@ test('overlapping operations are refused and an IDE-side race is reported', asyn
     const { review, adapter } = fixture();
     await review.proposeFixture();
     let resolve;
-    adapter.apply = () => new Promise(done => { resolve = done; });
+    adapter.apply = () =>
+        new Promise(done => {
+            resolve = done;
+        });
     const pending = review.apply();
     await assert.rejects(review.apply(), /already in progress/);
     await assert.rejects(review.proposeFixture(), /already in progress/);
@@ -71,7 +92,8 @@ test('oversized source and manually edited review are rejected before applicatio
     const { review, document } = fixture();
     document.text = 'x'.repeat(100001);
     await assert.rejects(review.proposeFixture(), /limit/);
-    document.text = 'small'; await review.proposeFixture();
+    document.text = 'small';
+    await review.proposeFixture();
     review.review.text = 'x'.repeat(100001);
     await assert.rejects(review.apply(), /limit/);
     assert.equal(document.text, 'small');
@@ -91,7 +113,9 @@ test('fixture preserves CRLF and rejected review opening clears the approval', a
     const { review, document, adapter, session } = fixture();
     document.text = 'line\r\n';
     assert.equal((await review.proposeFixture()).replacement, 'line\r\nExample reviewed edit.\r\n');
-    adapter.openReview = async () => { throw new Error('editor unavailable'); };
+    adapter.openReview = async () => {
+        throw new Error('editor unavailable');
+    };
     await assert.rejects(review.proposeFixture(), /editor unavailable/);
     assert.equal(session.proposal, undefined);
 });

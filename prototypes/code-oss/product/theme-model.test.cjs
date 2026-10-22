@@ -8,7 +8,13 @@ test('every preset is valid, and all but Paper/High Contrast are dark', () => {
         const clean = model.sanitize(preset);
         assert.equal(clean.name, preset.name);
         assert.deepEqual(clean.text, preset.text);
-        assert.ok(model.checks(preset).filter(check => ['text', 'muted', 'code'].includes(check.id)).every(check => check.ok), `${preset.id} is readable`);
+        assert.ok(
+            model
+                .checks(preset)
+                .filter(check => ['text', 'muted', 'code'].includes(check.id))
+                .every(check => check.ok),
+            `${preset.id} is readable`,
+        );
     }
     assert.equal(model.isLight(model.presetById('paper').background.color), true);
 });
@@ -16,7 +22,9 @@ test('every preset is valid, and all but Paper/High Contrast are dark', () => {
 test('the Charcoal preset changes nothing; a saved copy of it is a full theme', () => {
     const plain = model.resolve(model.presetById('charcoal'));
     assert.deepEqual(plain.colors, {});
-    assert.equal(plain.layer, null); assert.equal(plain.colorTheme, null); assert.equal(plain.tokenColors, null);
+    assert.equal(plain.layer, null);
+    assert.equal(plain.colorTheme, null);
+    assert.equal(plain.tokenColors, null);
     assert.equal(model.panelTokens(model.presetById('charcoal')), null);
     const copy = model.resolve({ ...model.sanitize(model.presetById('charcoal')), id: 'user-1' });
     assert.equal(copy.colors['sideBar.background'], '#101010');
@@ -24,7 +32,11 @@ test('the Charcoal preset changes nothing; a saved copy of it is a full theme', 
 });
 
 test('resolve maps the six parts to the window', () => {
-    const theme = model.sanitize({ ...model.presetById('midnight'), accent: '#ff0000', editor: { background: '#202020' } });
+    const theme = model.sanitize({
+        ...model.presetById('midnight'),
+        accent: '#ff0000',
+        editor: { background: '#202020' },
+    });
     const result = model.resolve(theme);
     assert.equal(result.colors.focusBorder, '#ff0000');
     assert.equal(result.colors['button.foreground'], '#000000');
@@ -41,9 +53,20 @@ test('resolve maps the six parts to the window', () => {
 
 test('sanitize drops unsafe or unknown values from imported themes', () => {
     const clean = model.sanitize({
-        id: '../../etc', name: 'x'.repeat(200), font: { family: 'Inter"; } body { display: none' }, accent: 'red',
-        background: { kind: 'picture', picture: { source: 'user', name: '../secret.png' }, color: '#ABCDEF', dim: 7, ember: 'fireworks' },
-        code: 'installed:\nevil', text: { main: '#fff' }, extra: true,
+        id: '../../etc',
+        name: 'x'.repeat(200),
+        font: { family: 'Inter"; } body { display: none' },
+        accent: 'red',
+        background: {
+            kind: 'picture',
+            picture: { source: 'user', name: '../secret.png' },
+            color: '#ABCDEF',
+            dim: 7,
+            ember: 'fireworks',
+        },
+        code: 'installed:\nevil',
+        text: { main: '#fff' },
+        extra: true,
     });
     assert.equal(clean.id, 'custom');
     assert.equal(clean.name.length, 60);
@@ -58,9 +81,20 @@ test('sanitize drops unsafe or unknown values from imported themes', () => {
     assert.equal(clean.text.main, '#dadada');
     assert.equal('extra' in clean, false);
     // A gradient needs two colours and bundled pictures must exist.
-    assert.equal(model.sanitize({ background: { kind: 'gradient', gradient: { stops: ['#000000'] } } }).background.kind, 'solid');
-    assert.equal(model.sanitize({ background: { kind: 'picture', picture: { source: 'bundled', name: 'nope' } } }).background.kind, 'solid');
-    assert.equal(model.sanitize({ background: { kind: 'picture', picture: { source: 'bundled', name: 'night-sky' } } }).background.picture.name, 'night-sky');
+    assert.equal(
+        model.sanitize({ background: { kind: 'gradient', gradient: { stops: ['#000000'] } } }).background.kind,
+        'solid',
+    );
+    assert.equal(
+        model.sanitize({ background: { kind: 'picture', picture: { source: 'bundled', name: 'nope' } } }).background
+            .kind,
+        'solid',
+    );
+    assert.equal(
+        model.sanitize({ background: { kind: 'picture', picture: { source: 'bundled', name: 'night-sky' } } })
+            .background.picture.name,
+        'night-sky',
+    );
 });
 
 test('Use from theme copies one part', () => {
@@ -73,19 +107,37 @@ test('Use from theme copies one part', () => {
 });
 
 test('readability checks fail on low contrast and Fix repairs them', () => {
-    let theme = model.sanitize({ ...model.presetById('charcoal'), text: { main: '#333333', muted: '#222222' }, accent: '#151515', code: 'daylight', editor: { background: '#202020' } });
-    const failing = model.checks(theme).filter(check => !check.ok).map(check => check.id);
+    let theme = model.sanitize({
+        ...model.presetById('charcoal'),
+        text: { main: '#333333', muted: '#222222' },
+        accent: '#151515',
+        code: 'daylight',
+        editor: { background: '#202020' },
+    });
+    const failing = model
+        .checks(theme)
+        .filter(check => !check.ok)
+        .map(check => check.id);
     assert.deepEqual(failing.sort(), ['accent', 'code', 'muted', 'text']);
     for (const id of failing) theme = model.fix(theme, id);
-    assert.ok(model.checks(theme).every(check => check.ok), JSON.stringify(model.checks(theme)));
+    assert.ok(
+        model.checks(theme).every(check => check.ok),
+        JSON.stringify(model.checks(theme)),
+    );
 });
 
 test('Surprise Me makes readable themes', () => {
     let seed = 1;
-    const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const random = () => {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647;
+    };
     for (let i = 0; i < 40; i++) {
         const theme = model.surprise(random);
-        assert.ok(model.checks(theme).every(check => check.ok), JSON.stringify(model.checks(theme)));
+        assert.ok(
+            model.checks(theme).every(check => check.ok),
+            JSON.stringify(model.checks(theme)),
+        );
     }
 });
 
@@ -102,6 +154,12 @@ test('imported pictures are recognised by content, and theme files may have comm
 function loadManagerHelpers() {
     const Module = require('node:module');
     const original = Module._load;
-    Module._load = function (request, ...rest) { return request === 'vscode' ? {} : original.call(this, request, ...rest); };
-    try { return require('./theme-manager.cjs'); } finally { Module._load = original; }
+    Module._load = function (request, ...rest) {
+        return request === 'vscode' ? {} : original.call(this, request, ...rest);
+    };
+    try {
+        return require('./theme-manager.cjs');
+    } finally {
+        Module._load = original;
+    }
 }

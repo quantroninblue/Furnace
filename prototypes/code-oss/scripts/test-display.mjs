@@ -10,22 +10,34 @@ const command = process.argv[2];
 if (!command) throw new Error('Usage: node scripts/test-display.mjs <script>');
 let display;
 let child;
-const stop = signal => { child?.kill(signal); display?.kill(signal); };
+const stop = signal => {
+    child?.kill(signal);
+    display?.kill(signal);
+};
 process.on('SIGINT', () => stop('SIGINT'));
 process.on('SIGTERM', () => stop('SIGTERM'));
 try {
     const env = { ...process.env };
     if (process.platform === 'linux' && env.AI_GUI_TEST_LIVE_DISPLAY !== '1') {
-        display = spawn(env.AI_GUI_XVFB ?? (existsSync(localXvfb) ? localXvfb : 'Xvfb'),
+        display = spawn(
+            env.AI_GUI_XVFB ?? (existsSync(localXvfb) ? localXvfb : 'Xvfb'),
             ['-displayfd', '3', '-screen', '0', '1440x900x24', '-nolisten', 'tcp'],
-            { stdio: ['ignore', 'ignore', 'pipe', 'pipe'] });
+            { stdio: ['ignore', 'ignore', 'pipe', 'pipe'] },
+        );
         let diagnostics = '';
-        display.stderr.on('data', data => { diagnostics += data; });
+        display.stderr.on('data', data => {
+            diagnostics += data;
+        });
         const number = await new Promise((resolve, reject) => {
             const timer = setTimeout(() => reject(new Error('Virtual display startup timed out')), 10000);
             let buffer = '';
-            const finish = (error, value) => { clearTimeout(timer); error ? reject(error) : resolve(value); };
-            display.once('error', error => finish(new Error(`Xvfb is required for isolated smoke tests: ${error.message}. See README.`)));
+            const finish = (error, value) => {
+                clearTimeout(timer);
+                error ? reject(error) : resolve(value);
+            };
+            display.once('error', error =>
+                finish(new Error(`Xvfb is required for isolated smoke tests: ${error.message}. See README.`)),
+            );
             display.once('exit', code => finish(new Error(`Xvfb exited (${code}): ${diagnostics}`)));
             display.stdio[3].on('data', data => {
                 buffer += data;

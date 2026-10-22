@@ -18,7 +18,11 @@ const host = process.argv.findIndex(arg => arg === '--assistant-service' || arg 
 if (host >= 0) {
     const extensions = fs.realpathSync(path.join(here, '../extensions')) + path.sep;
     let entry = '';
-    try { entry = host === 2 ? fs.realpathSync(process.argv[1]) : ''; } catch { /* Missing file. */ }
+    try {
+        entry = host === 2 ? fs.realpathSync(process.argv[1]) : '';
+    } catch {
+        /* Missing file. */
+    }
     if (!entry.startsWith(extensions) || !entry.endsWith('.cjs')) {
         console.error('Furnace: refusing to run a host entry outside the built-in extensions.');
         process.exit(1);
@@ -28,10 +32,16 @@ if (host >= 0) {
     // First launch only, and only for the default profile location (as getUserDataPath).
     try {
         const product = require('../product.json');
-        const custom = process.env.VSCODE_PORTABLE || process.env.VSCODE_APPDATA || process.argv.some(arg => arg === '--user-data-dir' || arg.startsWith('--user-data-dir='));
-        const appData = process.platform === 'darwin' ? process.env.HOME && path.join(process.env.HOME, 'Library/Application Support')
-            : process.platform === 'win32' ? process.env.APPDATA
-            : process.env.XDG_CONFIG_HOME || (process.env.HOME && path.join(process.env.HOME, '.config'));
+        const custom =
+            process.env.VSCODE_PORTABLE ||
+            process.env.VSCODE_APPDATA ||
+            process.argv.some(arg => arg === '--user-data-dir' || arg.startsWith('--user-data-dir='));
+        const appData =
+            process.platform === 'darwin'
+                ? process.env.HOME && path.join(process.env.HOME, 'Library/Application Support')
+                : process.platform === 'win32'
+                  ? process.env.APPDATA
+                  : process.env.XDG_CONFIG_HOME || (process.env.HOME && path.join(process.env.HOME, '.config'));
         if (!custom && appData) {
             const settings = path.join(appData, product.nameShort, 'User/settings.json');
             if (!fs.existsSync(settings)) {
@@ -39,6 +49,8 @@ if (host >= 0) {
                 fs.writeFileSync(settings, fs.readFileSync(path.join(here, 'furnace-settings.json')), { flag: 'wx' });
             }
         }
-    } catch (error) { console.error(`Furnace: first-run settings skipped: ${error.message}`); }
+    } catch (error) {
+        console.error(`Furnace: first-run settings skipped: ${error.message}`);
+    }
     await import('./main.js');
 }

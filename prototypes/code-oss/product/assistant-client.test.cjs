@@ -10,14 +10,17 @@ const { AssistantClient } = require('./assistant-client.cjs');
 test('the service can reply after a delay over its private pipe', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'assistant-client-'));
     const entry = path.join(dir, 'service.cjs');
-    fs.writeFileSync(entry, `const { Socket } = require('node:net');
+    fs.writeFileSync(
+        entry,
+        `const { Socket } = require('node:net');
 const { PrivateRPC } = require(${JSON.stringify(path.join(__dirname, '../../shared/assistant/rpc.cjs'))});
 const rpc = new PrivateRPC(new Socket({ fd: 3, readable: true, writable: true }), async name => {
     await new Promise(resolve => setTimeout(resolve, 300));
     return { answered: name };
 });
 rpc.on('closed', () => process.exit(0));
-`);
+`,
+    );
     const client = new AssistantClient({ executable: process.execPath, entry, directory: path.join(dir, 'data') });
     try {
         assert.deepEqual(await client.status(), { answered: 'status' });

@@ -11,7 +11,11 @@ class SpendMethods {
     /** Adds one provider usage event to a message's usage (input: latest call; billedInput: every call). */
     addUsage(target, usage) {
         target.usage ||= { input: 0, output: 0 };
-        if (usage.input) { target.usage.input = usage.input; target.usage.billedInput = (target.usage.billedInput || 0) + usage.input; target.usage.first ??= usage.input; }
+        if (usage.input) {
+            target.usage.input = usage.input;
+            target.usage.billedInput = (target.usage.billedInput || 0) + usage.input;
+            target.usage.first ??= usage.input;
+        }
         if (usage.output) target.usage.output += usage.output;
     }
     noteLimits(model, limits) {
@@ -26,12 +30,18 @@ class SpendMethods {
     }
     /** This conversation's estimated cost, and whether some API replies used a model without a known price. */
     costSummary() {
-        let total = 0, unpriced = 0, priced = 0;
-        for (const message of this.data.messages) for (const item of [message, message.review].filter(Boolean)) {
-            const model = item.model || message.model;
-            if (!item.usage || !billedByProvider(model || '')) continue;
-            if (typeof item.cost === 'number') { total += item.cost; priced++; } else unpriced++;
-        }
+        let total = 0,
+            unpriced = 0,
+            priced = 0;
+        for (const message of this.data.messages)
+            for (const item of [message, message.review].filter(Boolean)) {
+                const model = item.model || message.model;
+                if (!item.usage || !billedByProvider(model || '')) continue;
+                if (typeof item.cost === 'number') {
+                    total += item.cost;
+                    priced++;
+                } else unpriced++;
+            }
         return priced || unpriced ? { total, unpriced } : null;
     }
     // ---- Real token counts for the context meter ----
@@ -40,22 +50,53 @@ class SpendMethods {
         clearTimeout(this.measureTimer);
         if (!COUNTED.includes(providerOf(this.data.model)) || !this.provider.count) return;
         if (this.disposed) return;
-        this.measureTimer = setTimeout(() => { void this.measure().catch(() => {}); }, delay);
+        this.measureTimer = setTimeout(() => {
+            void this.measure().catch(() => {});
+        }, delay);
         this.measureTimer.unref?.();
     }
     async measure() {
-        const model = this.data.model, epoch = this.epoch;
+        const model = this.data.model,
+            epoch = this.epoch;
         if (this.busy() || !COUNTED.includes(providerOf(model))) return null;
         const estimate = this.usage()?.estimated;
         const context = await this.context('');
-        const messages = sendable(this.data.messages).filter(message => message.content.trim()).map(({ id, role, content, kind }) => ({ id, role, kind, content }));
-        if (!messages.length || messages.at(-1).role !== 'user') messages.push({ id: 'count', role: 'user', content: '.' });
-        const mode = this.mode(), host = this.adapter.toolHost?.() || null;
-        const definitions = createAgentTools(mode, host, { permission: this.adapter.permission?.() || 'ask', signal: new AbortController().signal, report: () => {}, approve: async () => false },
-            { propose: () => {}, verify: mode === 'build' ? { brief: () => '', record: () => {}, confirm: () => {} } : undefined }).definitions;
-        const tokens = await this.provider.count({ id: 'count', model, mode, permission: this.adapter.permission?.() || 'ask', environment: (this.adapter.environment?.() || '').slice(0, 1000), messages, context: context.text }, definitions);
+        const messages = sendable(this.data.messages)
+            .filter(message => message.content.trim())
+            .map(({ id, role, content, kind }) => ({ id, role, kind, content }));
+        if (!messages.length || messages.at(-1).role !== 'user')
+            messages.push({ id: 'count', role: 'user', content: '.' });
+        const mode = this.mode(),
+            host = this.adapter.toolHost?.() || null;
+        const definitions = createAgentTools(
+            mode,
+            host,
+            {
+                permission: this.adapter.permission?.() || 'ask',
+                signal: new AbortController().signal,
+                report: () => {},
+                approve: async () => false,
+            },
+            {
+                propose: () => {},
+                verify: mode === 'build' ? { brief: () => '', record: () => {}, confirm: () => {} } : undefined,
+            },
+        ).definitions;
+        const tokens = await this.provider.count(
+            {
+                id: 'count',
+                model,
+                mode,
+                permission: this.adapter.permission?.() || 'ask',
+                environment: (this.adapter.environment?.() || '').slice(0, 1000),
+                messages,
+                context: context.text,
+            },
+            definitions,
+        );
         if (typeof tokens !== 'number' || epoch !== this.epoch || model !== this.data.model || !estimate) return null;
-        this.counted = { model, tokens, estimate, at: Date.now() }; this.changed();
+        this.counted = { model, tokens, estimate, at: Date.now() };
+        this.changed();
         return tokens;
     }
     /**
@@ -66,9 +107,12 @@ class SpendMethods {
         const model = this.data.model;
         if (this.counted?.model === model) return clamp(this.counted.tokens / this.counted.estimate);
         if (providerOf(model) === 'claude-code') return 1;
-        const reply = this.data.messages.findLast(message => message.role === 'assistant' && message.model === model && message.usage?.first && message.estimate);
+        const reply = this.data.messages.findLast(
+            message =>
+                message.role === 'assistant' && message.model === model && message.usage?.first && message.estimate,
+        );
         return reply ? clamp(reply.usage.first / reply.estimate) : 1;
     }
 }
-const clamp = value => Number.isFinite(value) ? Math.min(2.5, Math.max(0.4, value)) : 1;
+const clamp = value => (Number.isFinite(value) ? Math.min(2.5, Math.max(0.4, value)) : 1);
 module.exports = { SpendMethods, providerOf };

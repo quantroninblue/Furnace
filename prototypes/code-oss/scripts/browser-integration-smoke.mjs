@@ -5,16 +5,30 @@ import { desktopTest } from './desktop-test.mjs';
 import { root } from './environment.mjs';
 const test = await desktopTest('browser-integration-smoke');
 let failure;
-const report = async () => JSON.parse(await readFile(path.join(test.artifacts, 'browser-report.json'), 'utf8').catch(() => '{}'));
-const stage = async expected => expect.poll(async () => {
-    const result = await report(); if (result.stage === 'failed') throw new Error(result.error); return result.stage;
-}, { timeout: 60000 }).toBe(expected);
+const report = async () =>
+    JSON.parse(await readFile(path.join(test.artifacts, 'browser-report.json'), 'utf8').catch(() => '{}'));
+const stage = async expected =>
+    expect
+        .poll(
+            async () => {
+                const result = await report();
+                if (result.stage === 'failed') throw new Error(result.error);
+                return result.stage;
+            },
+            { timeout: 60000 },
+        )
+        .toBe(expected);
 try {
-    const folder = path.join(test.artifacts, 'second-folder'); await mkdir(folder);
+    const folder = path.join(test.artifacts, 'second-folder');
+    await mkdir(folder);
     const workspace = path.join(test.artifacts, 'browser.code-workspace');
     await writeFile(workspace, JSON.stringify({ folders: [{ path: 'workspace' }, { path: 'second-folder' }] }));
     process.env.AI_GUI_BROWSER_INTEGRATION_TEST = test.artifacts;
-    await test.launch(workspace, ['--extensionTestsPath', path.join(root, 'fixtures/browser-integration-tests.cjs'), '--disable-workspace-trust']);
+    await test.launch(workspace, [
+        '--extensionTestsPath',
+        path.join(root, 'fixtures/browser-integration-tests.cjs'),
+        '--disable-workspace-trust',
+    ]);
     await stage('form-ready');
     const home = await test.webview('home');
     await home.getByLabel('Website or search query').fill((await report()).url);
@@ -35,16 +49,41 @@ try {
     await stage('complete');
     const result = await report();
     await test.close();
-    await expect.poll(() => { try { process.kill(result.pid, 0); return false; } catch { return true; } }).toBe(true);
-    await expect.poll(async () => { try { await readdir(result.profile); return false; } catch { return true; } }).toBe(true);
+    await expect
+        .poll(() => {
+            try {
+                process.kill(result.pid, 0);
+                return false;
+            } catch {
+                return true;
+            }
+        })
+        .toBe(true);
+    await expect
+        .poll(async () => {
+            try {
+                await readdir(result.profile);
+                return false;
+            } catch {
+                return true;
+            }
+        })
+        .toBe(true);
     result.checks.push('real IDE shutdown closes active companion and removes profile');
     const logs = path.join(test.profile, 'user-data/logs');
     for (const file of await readdir(logs, { recursive: true })) {
         if (!/(?:exthost|renderer)\.log$/.test(file)) continue;
-        expect(await readFile(path.join(logs, file), 'utf8'), file).not.toMatch(/Activating extension .*failed|Cannot find module|ReferenceError|TypeError/);
+        expect(await readFile(path.join(logs, file), 'utf8'), file).not.toMatch(
+            /Activating extension .*failed|Cannot find module|ReferenceError|TypeError/,
+        );
     }
     expect(test.errors).toEqual([]);
     await writeFile(path.join(test.artifacts, 'result.json'), JSON.stringify(result, null, 2));
     console.log('PASS: research GUI, real companion, workspace scope, crash/reopen and IDE shutdown.');
-} catch (error) { failure = error; throw error; }
-finally { delete process.env.AI_GUI_BROWSER_INTEGRATION_TEST; await test.finish(failure); }
+} catch (error) {
+    failure = error;
+    throw error;
+} finally {
+    delete process.env.AI_GUI_BROWSER_INTEGRATION_TEST;
+    await test.finish(failure);
+}

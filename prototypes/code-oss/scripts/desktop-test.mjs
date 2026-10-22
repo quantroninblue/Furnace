@@ -9,7 +9,8 @@ import { launchOptions } from './launch.mjs';
 export async function desktopTest(name, { discover = false, welcome = false } = {}) {
     // Desktop suites load .cache/product, so build it first: a stale bundle once made a suite
     // test old code. AI_GUI_TEST_SKIP_BUILD=1 reuses the existing build.
-    if (!process.env.AI_GUI_TEST_SKIP_BUILD) execFileSync(process.execPath, [path.join(root, 'scripts/build-product.mjs')], { stdio: 'inherit' });
+    if (!process.env.AI_GUI_TEST_SKIP_BUILD)
+        execFileSync(process.execPath, [path.join(root, 'scripts/build-product.mjs')], { stdio: 'inherit' });
     await mkdir(path.join(root, '.cache', name), { recursive: true });
     const artifacts = await mkdtemp(path.join(root, '.cache', name, 'run-'));
     const profile = path.join(artifacts, 'profile');
@@ -18,12 +19,17 @@ export async function desktopTest(name, { discover = false, welcome = false } = 
     const logs = [];
     const errors = [];
     const test = {
-        artifacts, profile, workspace, errors,
+        artifacts,
+        profile,
+        workspace,
+        errors,
         async launch(folder, extraArgs = []) {
             // Tests keep 100% zoom so layout checks and screenshots stay comparable.
             const settings = path.join(profile, 'user-data/User/settings.json');
             await mkdir(path.dirname(settings), { recursive: true });
-            await writeFile(settings, JSON.stringify({ 'window.zoomLevel': 0 }), { flag: 'wx' }).catch(error => { if (error.code !== 'EEXIST') throw error; });
+            await writeFile(settings, JSON.stringify({ 'window.zoomLevel': 0 }), { flag: 'wx' }).catch(error => {
+                if (error.code !== 'EEXIST') throw error;
+            });
             const options = await launchOptions(profile);
             if (!discover) options.env.AI_GUI_TEST_NO_DISCOVERY = '1';
             // The tutorial's welcome card would cover the window; only the shell suite checks it.
@@ -42,12 +48,25 @@ export async function desktopTest(name, { discover = false, welcome = false } = 
         },
         async webview(surface) {
             let result;
-            await expect.poll(async () => {
-                for (const frame of test.page.frames()) {
-                    if (await frame.locator(`body[data-surface="${surface}"]`).count().catch(() => 0)) { result = frame; return true; }
-                }
-                return false;
-            }, { timeout: 30000 }).toBe(true);
+            await expect
+                .poll(
+                    async () => {
+                        for (const frame of test.page.frames()) {
+                            if (
+                                await frame
+                                    .locator(`body[data-surface="${surface}"]`)
+                                    .count()
+                                    .catch(() => 0)
+                            ) {
+                                result = frame;
+                                return true;
+                            }
+                        }
+                        return false;
+                    },
+                    { timeout: 30000 },
+                )
+                .toBe(true);
             return result;
         },
         async command(title) {
@@ -59,11 +78,24 @@ export async function desktopTest(name, { discover = false, welcome = false } = 
             await test.page.keyboard.press('Enter');
             await input.waitFor({ state: 'hidden' });
         },
-        async close() { if (test.app) { await test.app.close(); test.app = undefined; } },
+        async close() {
+            if (test.app) {
+                await test.app.close();
+                test.app = undefined;
+            }
+        },
         async finish(error) {
             if (test.app) {
-                await test.page.screenshot({ path: path.join(artifacts, error ? 'failure.png' : 'final.png') }).catch(() => {});
-                await writeFile(path.join(artifacts, 'page.txt'), await test.page.locator('body').innerText().catch(() => 'unavailable'));
+                await test.page
+                    .screenshot({ path: path.join(artifacts, error ? 'failure.png' : 'final.png') })
+                    .catch(() => {});
+                await writeFile(
+                    path.join(artifacts, 'page.txt'),
+                    await test.page
+                        .locator('body')
+                        .innerText()
+                        .catch(() => 'unavailable'),
+                );
             }
             await test.close();
             await writeFile(path.join(artifacts, 'desktop.log'), logs.join(''));
