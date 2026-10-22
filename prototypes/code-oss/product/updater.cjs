@@ -24,42 +24,63 @@ const MAX_DOWNLOAD = 2 * 1024 ** 3;
 
 /** Compares dotted versions ("0.10.2" > "0.9"); non-numeric parts count as 0. */
 function newer(candidate, current) {
-    const parts = value => String(value).replace(/^v/, '').split(/[.+-]/).slice(0, 3).map(part => Number.parseInt(part, 10) || 0);
+    const parts = value =>
+        String(value)
+            .replace(/^v/, '')
+            .split(/[.+-]/)
+            .slice(0, 3)
+            .map(part => Number.parseInt(part, 10) || 0);
     const [a, b] = [parts(candidate), parts(current)];
-    for (let index = 0; index < 3; index++) if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) > (b[index] || 0);
+    for (let index = 0; index < 3; index++)
+        if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) > (b[index] || 0);
     return false;
 }
 
 /** The feed key for this machine's download, for example "darwin-arm64" or "win32-x64". */
 const platformKey = (platform = process.platform, arch = process.arch) => `${platform}-${arch}`;
 /** The feed key for an install target: Linux adds its package type ("linux-x64-deb"). */
-const assetKey = (target, arch = process.arch) => target.package ? `${platformKey(target.platform, arch)}-${target.package}` : platformKey(target.platform, arch);
+const assetKey = (target, arch = process.arch) =>
+    target.package ? `${platformKey(target.platform, arch)}-${target.package}` : platformKey(target.platform, arch);
 
 /**
  * Validates an update feed: { version, url, notes?, assets? } with an https release page. Each asset
  * is { file, url, size, sha256 } under its platform key.
  */
 function readFeed(value) {
-    if (!value || typeof value.version !== 'string' || !/^v?\d+(\.\d+){0,2}$/.test(value.version)) throw new Error('The update feed has no version.');
+    if (!value || typeof value.version !== 'string' || !/^v?\d+(\.\d+){0,2}$/.test(value.version))
+        throw new Error('The update feed has no version.');
     const url = new URL(String(value.url || ''));
     if (url.protocol !== 'https:') throw new Error('The update feed must link to an https page.');
     const assets = {};
     for (const [key, asset] of Object.entries(value.assets && typeof value.assets === 'object' ? value.assets : {})) {
-        if (!/^[a-z0-9]+(-[a-z0-9]+){1,2}$/.test(key) || !asset || typeof asset !== 'object') throw new Error(`The update feed has a malformed download (${key}).`);
+        if (!/^[a-z0-9]+(-[a-z0-9]+){1,2}$/.test(key) || !asset || typeof asset !== 'object')
+            throw new Error(`The update feed has a malformed download (${key}).`);
         const download = new URL(String(asset.url || ''));
         if (download.protocol !== 'https:') throw new Error(`The ${key} download must use https.`);
-        if (typeof asset.file !== 'string' || !/^[\w.-]{1,128}$/.test(asset.file) || asset.file.startsWith('.')) throw new Error(`The ${key} download has a malformed file name.`);
-        if (!Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > MAX_DOWNLOAD) throw new Error(`The ${key} download has a malformed size.`);
-        if (typeof asset.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(asset.sha256)) throw new Error(`The ${key} download has a malformed SHA-256.`);
+        if (typeof asset.file !== 'string' || !/^[\w.-]{1,128}$/.test(asset.file) || asset.file.startsWith('.'))
+            throw new Error(`The ${key} download has a malformed file name.`);
+        if (!Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > MAX_DOWNLOAD)
+            throw new Error(`The ${key} download has a malformed size.`);
+        if (typeof asset.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(asset.sha256))
+            throw new Error(`The ${key} download has a malformed SHA-256.`);
         assets[key] = { file: asset.file, url: download.toString(), size: asset.size, sha256: asset.sha256 };
     }
-    return { version: value.version.replace(/^v/, ''), url: url.toString(), notes: typeof value.notes === 'string' ? value.notes.slice(0, 300) : '', assets };
+    return {
+        version: value.version.replace(/^v/, ''),
+        url: url.toString(),
+        notes: typeof value.notes === 'string' ? value.notes.slice(0, 300) : '',
+        assets,
+    };
 }
 
 /** Checks the feed's Ed25519 signature (base64, over the exact bytes) before reading it. */
 function verifyFeed(bytes, signature, publicKey) {
     let valid = false;
-    try { valid = crypto.verify(null, bytes, publicKey, Buffer.from(String(signature).trim(), 'base64')); } catch { /* Malformed key or signature. */ }
+    try {
+        valid = crypto.verify(null, bytes, publicKey, Buffer.from(String(signature).trim(), 'base64'));
+    } catch {
+        /* Malformed key or signature. */
+    }
     if (!valid) throw new Error('The update feed signature is not valid.');
     return readFeed(JSON.parse(Buffer.from(bytes).toString('utf8')));
 }
@@ -67,7 +88,10 @@ function verifyFeed(bytes, signature, publicKey) {
 /** Fetches the feed and, when the build carries a public key, its signature. */
 async function fetchFeed({ feed, publicKey }, fetcher = globalThis.fetch) {
     const get = async url => {
-        const response = await fetcher(url, { signal: AbortSignal.timeout(15000), headers: { accept: 'application/json, text/plain' } });
+        const response = await fetcher(url, {
+            signal: AbortSignal.timeout(15000),
+            headers: { accept: 'application/json, text/plain' },
+        });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return Buffer.from(await response.arrayBuffer());
     };
@@ -80,25 +104,47 @@ async function fetchFeed({ feed, publicKey }, fetcher = globalThis.fetch) {
  * Where this copy of Furnace is installed and whether it can replace itself, or why not:
  * { ok: true, platform, bundle | installDir } or { ok: false, reason }.
  */
-function installTarget({ platform = process.platform, appRoot, execPath = process.execPath, exists = fs.existsSync, writable = isWritable, owner = packageOwner } = {}) {
+function installTarget({
+    platform = process.platform,
+    appRoot,
+    execPath = process.execPath,
+    exists = fs.existsSync,
+    writable = isWritable,
+    owner = packageOwner,
+} = {}) {
     if (platform === 'darwin') {
         const bundle = path.posix.resolve(appRoot || '/', '../../..');
         if (!bundle.endsWith('.app')) return { ok: false, reason: 'Furnace is not running from an app bundle.' };
-        if (bundle.startsWith('/Volumes/')) return { ok: false, reason: 'Furnace is running from the disk image. Drag it to Applications first.' };
-        if (bundle.includes('/AppTranslocation/')) return { ok: false, reason: 'macOS is running Furnace from a temporary copy. Move Furnace to Applications and open it from there.' };
-        if (!writable(path.posix.dirname(bundle)) || !writable(bundle)) return { ok: false, reason: `Furnace can't replace itself in ${path.posix.dirname(bundle)} (no write permission).` };
+        if (bundle.startsWith('/Volumes/'))
+            return { ok: false, reason: 'Furnace is running from the disk image. Drag it to Applications first.' };
+        if (bundle.includes('/AppTranslocation/'))
+            return {
+                ok: false,
+                reason: 'macOS is running Furnace from a temporary copy. Move Furnace to Applications and open it from there.',
+            };
+        if (!writable(path.posix.dirname(bundle)) || !writable(bundle))
+            return {
+                ok: false,
+                reason: `Furnace can't replace itself in ${path.posix.dirname(bundle)} (no write permission).`,
+            };
         return { ok: true, platform, bundle };
     }
     if (platform === 'win32') {
         const installDir = path.win32.dirname(execPath);
-        if (!exists(path.win32.join(installDir, 'unins000.exe'))) return { ok: false, reason: 'This copy of Furnace was not installed with the Furnace installer.' };
+        if (!exists(path.win32.join(installDir, 'unins000.exe')))
+            return { ok: false, reason: 'This copy of Furnace was not installed with the Furnace installer.' };
         return { ok: true, platform, installDir };
     }
     if (platform === 'linux') {
         const installDir = path.posix.resolve(appRoot || '/', '../..');
         const kind = installDir.startsWith('/usr/share/') ? owner(installDir, exists) : null;
-        if (!kind) return { ok: false, reason: 'This copy of Furnace was not installed from the Furnace .deb or .rpm package.' };
-        if (!exists('/usr/bin/pkexec')) return { ok: false, reason: 'Installing the update needs pkexec (PolicyKit), which is not installed.' };
+        if (!kind)
+            return {
+                ok: false,
+                reason: 'This copy of Furnace was not installed from the Furnace .deb or .rpm package.',
+            };
+        if (!exists('/usr/bin/pkexec'))
+            return { ok: false, reason: 'Installing the update needs pkexec (PolicyKit), which is not installed.' };
         return { ok: true, platform, package: kind, installDir };
     }
     return { ok: false, reason: 'In-app updates are available on macOS, Windows and Linux.' };
@@ -107,10 +153,20 @@ function installTarget({ platform = process.platform, appRoot, execPath = proces
 function packageOwner(installDir, exists = fs.existsSync, run = require('node:child_process').execFileSync) {
     const name = path.posix.basename(installDir);
     if (exists(`/var/lib/dpkg/info/${name}.list`)) return 'deb';
-    try { run('rpm', ['-q', '--quiet', name], { stdio: 'ignore', timeout: 10000 }); return 'rpm'; } catch { return null; }
+    try {
+        run('rpm', ['-q', '--quiet', name], { stdio: 'ignore', timeout: 10000 });
+        return 'rpm';
+    } catch {
+        return null;
+    }
 }
 function isWritable(file) {
-    try { fs.accessSync(file, fs.constants.W_OK); return true; } catch { return false; }
+    try {
+        fs.accessSync(file, fs.constants.W_OK);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /** Streams a download to `file`, checking its size and SHA-256 (removes it on any mismatch). */
@@ -130,15 +186,20 @@ async function download(asset, file, { fetcher = globalThis.fetch, signal, onPro
             if (!out.write(chunk)) await new Promise(resolve => out.once('drain', resolve));
             onProgress?.(received, asset.size);
         }
-        await new Promise((resolve, reject) => out.end(error => error ? reject(error) : resolve()));
+        await new Promise((resolve, reject) => out.end(error => (error ? reject(error) : resolve())));
         if (received !== asset.size) throw new Error('The download is incomplete.');
-        if (hash.digest('hex') !== asset.sha256) throw new Error("The download doesn't match the update feed (SHA-256).");
+        if (hash.digest('hex') !== asset.sha256)
+            throw new Error("The download doesn't match the update feed (SHA-256).");
         await fsp.rename(partial, file);
         return file;
     } catch (error) {
         // Wait for the file to close (or finish opening) before removing it, or the open can
         // land after the removal and leave the partial file behind (seen on Windows).
-        await new Promise(resolve => { if (out.closed) return resolve(); out.once('close', resolve); out.destroy(); });
+        await new Promise(resolve => {
+            if (out.closed) return resolve();
+            out.once('close', resolve);
+            out.destroy();
+        });
         await fsp.rm(partial, { force: true });
         throw error;
     }
@@ -151,7 +212,9 @@ async function verified(asset, file) {
         const hash = crypto.createHash('sha256');
         for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
         return hash.digest('hex') === asset.sha256;
-    } catch { return false; }
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -198,11 +261,12 @@ exit 0
  * the install was cancelled, so Restart Now always brings Furnace back.
  */
 function linuxScript({ pid, file, kind, flag, log, elevate = ['/usr/bin/pkexec'], launcher = '/usr/bin/furnace' }) {
-    const install = kind === 'deb'
-        ? `${elevate.map(sh).join(' ')} /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall --allow-downgrades ${sh(file)}`
-        : `if command -v dnf >/dev/null 2>&1; then ${elevate.map(sh).join(' ')} dnf install -y ${sh(file)}; `
-            + `elif command -v zypper >/dev/null 2>&1; then ${elevate.map(sh).join(' ')} zypper --non-interactive install --allow-unsigned-rpm ${sh(file)}; `
-            + `else ${elevate.map(sh).join(' ')} rpm -U --replacepkgs ${sh(file)}; fi`;
+    const install =
+        kind === 'deb'
+            ? `${elevate.map(sh).join(' ')} /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall --allow-downgrades ${sh(file)}`
+            : `if command -v dnf >/dev/null 2>&1; then ${elevate.map(sh).join(' ')} dnf install -y ${sh(file)}; ` +
+              `elif command -v zypper >/dev/null 2>&1; then ${elevate.map(sh).join(' ')} zypper --non-interactive install --allow-unsigned-rpm ${sh(file)}; ` +
+              `else ${elevate.map(sh).join(' ')} rpm -U --replacepkgs ${sh(file)}; fi`;
     return `#!/bin/sh
 # Furnace update: installs ${sh(file)} once process ${pid} has exited.
 flag=${sh(flag)}
@@ -255,36 +319,67 @@ exit $code
  * Furnace's process tree and job objects. Returns the script and log paths.
  */
 async function startInstaller({ target, staged, dir, pid, spawner = spawn, elevate }) {
-    const flag = relaunchFlag(dir), log = path.join(dir, 'install.log');
+    const flag = relaunchFlag(dir),
+        log = path.join(dir, 'install.log');
     await fsp.rm(flag, { force: true });
     if (target.platform === 'darwin' || target.platform === 'linux') {
         const script = path.join(dir, 'install.sh');
-        await fsp.writeFile(script, target.platform === 'darwin'
-            ? darwinScript({ pid, bundle: target.bundle, app: staged, dir, flag, log })
-            : linuxScript({ pid, file: staged, kind: target.package, flag, log, ...(elevate ? { elevate } : {}) }), { mode: 0o700 });
+        await fsp.writeFile(
+            script,
+            target.platform === 'darwin'
+                ? darwinScript({ pid, bundle: target.bundle, app: staged, dir, flag, log })
+                : linuxScript({ pid, file: staged, kind: target.package, flag, log, ...(elevate ? { elevate } : {}) }),
+            { mode: 0o700 },
+        );
         spawner('/bin/sh', [script], { detached: true, stdio: 'ignore', env: cleanEnvironment() }).unref();
         return { script, log };
     }
     const script = path.join(dir, 'install.ps1');
     await fsp.writeFile(script, windowsScript({ pid, setup: staged, flag, log }));
     const command = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "${script}"`;
-    const launcher = `$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }; `
-        + `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = ${ps(command)}; ProcessStartupInformation = $si }; `
-        + `if ($r.ReturnValue -ne 0) { exit 1 }`;
+    const launcher =
+        `$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }; ` +
+        `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = ${ps(command)}; ProcessStartupInformation = $si }; ` +
+        `if ($r.ReturnValue -ne 0) { exit 1 }`;
     await new Promise((resolve, reject) => {
-        const child = spawner('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', launcher], { stdio: 'ignore', windowsHide: true });
+        const child = spawner('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', launcher], {
+            stdio: 'ignore',
+            windowsHide: true,
+        });
         child.once('error', reject);
-        child.once('exit', code => code === 0 ? resolve() : reject(new Error(`Could not start the installer (code ${code}).`)));
+        child.once('exit', code =>
+            code === 0 ? resolve() : reject(new Error(`Could not start the installer (code ${code}).`)),
+        );
     });
     return { script, log };
 }
 
 // The extension host's environment marks Electron to run as Node (ELECTRON_RUN_AS_NODE) and carries
 // VS Code's process handles; Furnace reopened with it would not start as the app.
-const cleanEnvironment = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([key]) => !/^(ELECTRON_|VSCODE_)/.test(key)));
+const cleanEnvironment = (env = process.env) =>
+    Object.fromEntries(Object.entries(env).filter(([key]) => !/^(ELECTRON_|VSCODE_)/.test(key)));
 
 const relaunchFlag = dir => path.join(dir, 'relaunch');
 /** Restart Now: Furnace opens again once the update is installed. */
 const requestRelaunch = dir => fsp.writeFile(relaunchFlag(dir), 'yes');
 
-module.exports = { newer, platformKey, assetKey, readFeed, verifyFeed, fetchFeed, installTarget, packageOwner, download, verified, stage, darwinScript, linuxScript, windowsScript, startInstaller, cleanEnvironment, requestRelaunch, relaunchFlag };
+module.exports = {
+    newer,
+    platformKey,
+    assetKey,
+    readFeed,
+    verifyFeed,
+    fetchFeed,
+    installTarget,
+    packageOwner,
+    download,
+    verified,
+    stage,
+    darwinScript,
+    linuxScript,
+    windowsScript,
+    startInstaller,
+    cleanEnvironment,
+    requestRelaunch,
+    relaunchFlag,
+};

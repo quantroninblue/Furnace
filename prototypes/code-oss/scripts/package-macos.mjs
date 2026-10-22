@@ -17,19 +17,25 @@ async function assemble(arch = process.arch) {
     await installFurnace(path.join(bundle, 'Contents/Resources/app'), 'darwin');
     console.log(`Assembled ${bundle}`);
 
-    if (process.platform !== 'darwin') { console.log('Not macOS: skipped signing and the .dmg.'); return; }
+    if (process.platform !== 'darwin') {
+        console.log('Not macOS: skipped signing and the .dmg.');
+        return;
+    }
     // Ad-hoc signature: required to run on Apple Silicon; not notarized (testers use Open Anyway).
     execFileSync('codesign', ['--force', '--deep', '--sign', '-', bundle], { stdio: 'inherit' });
     execFileSync('codesign', ['--verify', '--deep', '--strict', bundle], { stdio: 'inherit' });
 
-    const dist = path.join(root, '.cache/dist'), staging = path.join(dist, 'dmg');
+    const dist = path.join(root, '.cache/dist'),
+        staging = path.join(dist, 'dmg');
     await rm(staging, { recursive: true, force: true });
     await mkdir(staging, { recursive: true });
     execFileSync('ditto', [bundle, path.join(staging, apps[0])]);
     await symlink('/Applications', path.join(staging, 'Applications'));
     await cp(path.join(root, 'release/READ-ME-FIRST.txt'), path.join(staging, 'READ ME FIRST.txt'));
     const dmg = path.join(dist, `Furnace-darwin-${arch}.dmg`);
-    execFileSync('hdiutil', ['create', '-volname', 'Furnace', '-srcfolder', staging, '-ov', '-format', 'UDZO', dmg], { stdio: 'inherit' });
+    execFileSync('hdiutil', ['create', '-volname', 'Furnace', '-srcfolder', staging, '-ov', '-format', 'UDZO', dmg], {
+        stdio: 'inherit',
+    });
     console.log(`Disk image: ${dmg}`);
     // What the in-app updater downloads (product/updater.cjs): the signed app, zipped by ditto so
     // its signature, symlinks and permissions survive.

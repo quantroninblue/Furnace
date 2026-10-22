@@ -14,7 +14,15 @@ try {
     const dialog = test.page.locator('.monaco-dialog-box');
     // VS Code may show its own startup prompt for an untrusted folder; decline it.
     const startup = test.page.getByRole('button', { name: "No, I don't trust the authors" });
-    if (await startup.waitFor({ timeout: 8000 }).then(() => true, () => false)) { await startup.click(); checks.push('startup trust prompt shown and declined'); }
+    if (
+        await startup.waitFor({ timeout: 8000 }).then(
+            () => true,
+            () => false,
+        )
+    ) {
+        await startup.click();
+        checks.push('startup trust prompt shown and declined');
+    }
     await expect(dialog).toHaveCount(0);
     const conversation = await test.webview('conversation');
     await conversation.getByLabel('Conversation draft').fill('/build');
@@ -32,5 +40,9 @@ try {
     expect(test.errors).toEqual([]);
     await writeFile(path.join(test.artifacts, 'result.json'), JSON.stringify({ checks }, null, 2));
     console.log(`PASS: workspace trust from the conversation panel (${checks.length} checks).`);
-} catch (error) { failure = error; throw error; }
-finally { await test.finish(failure); }
+} catch (error) {
+    failure = error;
+    throw error;
+} finally {
+    await test.finish(failure);
+}

@@ -14,8 +14,10 @@ import { updateRepository } from './release.mjs';
 
 // The file each platform's updater installs (product/updater.cjs).
 export const downloads = {
-    'darwin-arm64': 'Furnace-darwin-arm64.zip', 'win32-x64': 'FurnaceUserSetup-x64.exe',
-    'linux-x64-deb': 'Furnace-linux-x64.deb', 'linux-x64-rpm': 'Furnace-linux-x64.rpm',
+    'darwin-arm64': 'Furnace-darwin-arm64.zip',
+    'win32-x64': 'FurnaceUserSetup-x64.exe',
+    'linux-x64-deb': 'Furnace-linux-x64.deb',
+    'linux-x64-rpm': 'Furnace-linux-x64.rpm',
 };
 
 async function sha256(file) {
@@ -25,18 +27,27 @@ async function sha256(file) {
 }
 
 const [version, dir, notes = ''] = process.argv.slice(2);
-if (!/^\d+\.\d+\.\d+$/.test(version || '') || !dir) throw new Error('Usage: node scripts/release-feed.mjs <version, e.g. 0.2.0> <dir> [notes]');
+if (!/^\d+\.\d+\.\d+$/.test(version || '') || !dir)
+    throw new Error('Usage: node scripts/release-feed.mjs <version, e.g. 0.2.0> <dir> [notes]');
 if (!process.env.FURNACE_UPDATE_KEY) throw new Error('FURNACE_UPDATE_KEY (the update signing key) is not set.');
 const base = `https://github.com/${updateRepository}/releases`;
 const assets = {};
 for (const [key, file] of Object.entries(downloads)) {
     const full = path.join(dir, file);
-    assets[key] = { file, url: `${base}/download/v${version}/${file}`, size: (await stat(full)).size, sha256: await sha256(full) };
+    assets[key] = {
+        file,
+        url: `${base}/download/v${version}/${file}`,
+        size: (await stat(full)).size,
+        sha256: await sha256(full),
+    };
 }
-const feed = Buffer.from(JSON.stringify({ version, url: `${base}/tag/v${version}`, notes: notes.slice(0, 300), assets }, null, 2) + '\n');
+const feed = Buffer.from(
+    JSON.stringify({ version, url: `${base}/tag/v${version}`, notes: notes.slice(0, 300), assets }, null, 2) + '\n',
+);
 const signature = crypto.sign(null, feed, process.env.FURNACE_UPDATE_KEY).toString('base64');
 const publicKey = await readFile(path.join(root, 'release/update-key.pem'), 'utf8');
-if (!crypto.verify(null, feed, publicKey, Buffer.from(signature, 'base64'))) throw new Error('FURNACE_UPDATE_KEY does not match release/update-key.pem; builds would refuse this feed.');
+if (!crypto.verify(null, feed, publicKey, Buffer.from(signature, 'base64')))
+    throw new Error('FURNACE_UPDATE_KEY does not match release/update-key.pem; builds would refuse this feed.');
 await writeFile(path.join(dir, 'latest.json'), feed);
 await writeFile(path.join(dir, 'latest.json.sig'), signature + '\n');
 console.log(feed.toString());

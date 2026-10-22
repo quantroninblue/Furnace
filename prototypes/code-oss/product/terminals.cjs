@@ -7,25 +7,51 @@ const vscode = require('vscode');
 // closing a background process's terminal stops it.
 class Mirror {
     constructor(name, onClose) {
-        this.write$ = new vscode.EventEmitter(); this.close$ = new vscode.EventEmitter();
-        this.opened = false; this.buffer = ''; this.interrupt = () => {}; this.closed = false;
+        this.write$ = new vscode.EventEmitter();
+        this.close$ = new vscode.EventEmitter();
+        this.opened = false;
+        this.buffer = '';
+        this.interrupt = () => {};
+        this.closed = false;
         const pty = {
-            onDidWrite: this.write$.event, onDidClose: this.close$.event,
-            open: () => { this.opened = true; if (this.buffer) this.write$.fire(this.buffer); this.buffer = ''; },
-            close: () => { this.closed = true; onClose?.(); },
-            handleInput: data => { if (data === '\x03') this.interrupt(); },
+            onDidWrite: this.write$.event,
+            onDidClose: this.close$.event,
+            open: () => {
+                this.opened = true;
+                if (this.buffer) this.write$.fire(this.buffer);
+                this.buffer = '';
+            },
+            close: () => {
+                this.closed = true;
+                onClose?.();
+            },
+            handleInput: data => {
+                if (data === '\x03') this.interrupt();
+            },
         };
-        this.terminal = vscode.window.createTerminal({ name, pty, iconPath: new vscode.ThemeIcon('sparkle'), isTransient: true });
+        this.terminal = vscode.window.createTerminal({
+            name,
+            pty,
+            iconPath: new vscode.ThemeIcon('sparkle'),
+            isTransient: true,
+        });
     }
     out(text) {
         const value = text.replace(/\r?\n/g, '\r\n');
-        if (this.opened) this.write$.fire(value); else this.buffer = (this.buffer + value).slice(-200000);
+        if (this.opened) this.write$.fire(value);
+        else this.buffer = (this.buffer + value).slice(-200000);
     }
-    dispose() { this.terminal.dispose(); }
+    dispose() {
+        this.terminal.dispose();
+    }
 }
 
 class CommandTerminals {
-    constructor(enabled) { this.enabled = enabled; this.shared = undefined; this.mirrors = new Set(); }
+    constructor(enabled) {
+        this.enabled = enabled;
+        this.shared = undefined;
+        this.mirrors = new Set();
+    }
     open(command, cwd, background) {
         if (!this.enabled()) return null;
         let mirror;
@@ -38,7 +64,12 @@ class CommandTerminals {
             mirror.terminal.show(true);
             return handle;
         }
-        if (!this.shared || this.shared.closed) { this.shared = new Mirror('AI Agent', () => { this.shared = undefined; }); this.mirrors.add(this.shared); }
+        if (!this.shared || this.shared.closed) {
+            this.shared = new Mirror('AI Agent', () => {
+                this.shared = undefined;
+            });
+            this.mirrors.add(this.shared);
+        }
         mirror = this.shared;
         mirror.terminal.show(true);
         return this.handle(mirror, command, cwd, false);
@@ -47,12 +78,29 @@ class CommandTerminals {
         mirror.out(`\x1b[2m${cwd}${background ? ' · background' : ''}\x1b[0m\n\x1b[1m$ ${command}\x1b[0m\n`);
         let done = false;
         return {
-            write: text => { if (!done) mirror.out(text); },
-            exit: code => { if (done) return; done = true; mirror.interrupt = () => {}; mirror.out(`\n\x1b[2m[${code === null ? 'stopped' : `exit code ${code}`}]\x1b[0m\n\n`); },
-            onInterrupt: listener => { mirror.interrupt = () => { if (!done) { mirror.out('^C\n'); listener(); } }; },
+            write: text => {
+                if (!done) mirror.out(text);
+            },
+            exit: code => {
+                if (done) return;
+                done = true;
+                mirror.interrupt = () => {};
+                mirror.out(`\n\x1b[2m[${code === null ? 'stopped' : `exit code ${code}`}]\x1b[0m\n\n`);
+            },
+            onInterrupt: listener => {
+                mirror.interrupt = () => {
+                    if (!done) {
+                        mirror.out('^C\n');
+                        listener();
+                    }
+                };
+            },
             show: () => mirror.terminal.show(false),
         };
     }
-    dispose() { for (const mirror of this.mirrors) mirror.dispose(); this.mirrors.clear(); }
+    dispose() {
+        for (const mirror of this.mirrors) mirror.dispose();
+        this.mirrors.clear();
+    }
 }
 module.exports = { CommandTerminals };

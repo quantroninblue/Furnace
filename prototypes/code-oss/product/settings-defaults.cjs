@@ -4,10 +4,14 @@
 // the packaged app's entry (release/furnace-main.mjs) on first launch.
 function settingsDefaults(platform = process.platform) {
     return {
-        'workbench.colorTheme': 'Furnace Charcoal', 'chat.disableAIFeatures': true,
-        'workbench.startupEditor': 'none', 'workbench.secondarySideBar.defaultVisibility': 'visible',
-        'telemetry.telemetryLevel': 'off', 'extensions.autoUpdate': false,
-        'extensions.autoCheckUpdates': false, 'window.commandCenter': false,
+        'workbench.colorTheme': 'Furnace Charcoal',
+        'chat.disableAIFeatures': true,
+        'workbench.startupEditor': 'none',
+        'workbench.secondarySideBar.defaultVisibility': 'visible',
+        'telemetry.telemetryLevel': 'off',
+        'extensions.autoUpdate': false,
+        'extensions.autoCheckUpdates': false,
+        'window.commandCenter': false,
         // 120%: readable on dense laptop screens; users change it with Text size or Ctrl+=/-.
         'window.zoomLevel': 1,
         // Themed dialogs match the charcoal panels.

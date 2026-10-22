@@ -35,31 +35,56 @@ const work = await mkdtemp(path.join(os.tmpdir(), 'furnace-icons-'));
 try {
     await writeFile(path.join(work, 'jobs.json'), JSON.stringify(jobs));
     await writeFile(path.join(work, 'render.cjs'), renderer());
-    execFileSync(path.join(upstream, '.build/electron/code-oss'), [path.join(work, 'render.cjs'), work], { stdio: 'inherit', env: { ...process.env, ELECTRON_ENABLE_LOGGING: '0' } });
+    execFileSync(path.join(upstream, '.build/electron/code-oss'), [path.join(work, 'render.cjs'), work], {
+        stdio: 'inherit',
+        env: { ...process.env, ELECTRON_ENABLE_LOGGING: '0' },
+    });
     const png = async name => readFile(path.join(work, `${name}.png`));
 
     // .icns: PNG entries by type code (https://en.wikipedia.org/wiki/Apple_Icon_Image_format).
-    const icnsTypes = [['icp4', 16], ['icp5', 32], ['ic11', 32], ['ic12', 64], ['ic07', 128], ['ic13', 256], ['ic08', 256], ['ic14', 512], ['ic09', 512], ['ic10', 1024]];
-    const entries = await Promise.all(icnsTypes.map(async ([type, size]) => {
-        const data = await png(`mac-${size}`), head = Buffer.alloc(8);
-        head.write(type, 0, 'ascii'); head.writeUInt32BE(data.length + 8, 4);
-        return Buffer.concat([head, data]);
-    }));
+    const icnsTypes = [
+        ['icp4', 16],
+        ['icp5', 32],
+        ['ic11', 32],
+        ['ic12', 64],
+        ['ic07', 128],
+        ['ic13', 256],
+        ['ic08', 256],
+        ['ic14', 512],
+        ['ic09', 512],
+        ['ic10', 1024],
+    ];
+    const entries = await Promise.all(
+        icnsTypes.map(async ([type, size]) => {
+            const data = await png(`mac-${size}`),
+                head = Buffer.alloc(8);
+            head.write(type, 0, 'ascii');
+            head.writeUInt32BE(data.length + 8, 4);
+            return Buffer.concat([head, data]);
+        }),
+    );
     const icnsHead = Buffer.alloc(8);
-    icnsHead.write('icns', 0, 'ascii'); icnsHead.writeUInt32BE(8 + entries.reduce((sum, entry) => sum + entry.length, 0), 4);
+    icnsHead.write('icns', 0, 'ascii');
+    icnsHead.writeUInt32BE(8 + entries.reduce((sum, entry) => sum + entry.length, 0), 4);
     await writeFile(path.join(icons, 'furnace.icns'), Buffer.concat([icnsHead, ...entries]));
 
     // .ico: PNG-compressed images (Windows Vista and later).
     const icoSizes = [16, 20, 24, 32, 40, 48, 64, 256];
     const images = await Promise.all(icoSizes.map(size => png(`tile-${size}`)));
     const header = Buffer.alloc(6 + 16 * images.length);
-    header.writeUInt16LE(0, 0); header.writeUInt16LE(1, 2); header.writeUInt16LE(images.length, 4);
+    header.writeUInt16LE(0, 0);
+    header.writeUInt16LE(1, 2);
+    header.writeUInt16LE(images.length, 4);
     let offset = header.length;
     images.forEach((data, index) => {
-        const at = 6 + 16 * index, size = icoSizes[index] === 256 ? 0 : icoSizes[index];
-        header.writeUInt8(size, at); header.writeUInt8(size, at + 1);
-        header.writeUInt16LE(1, at + 4); header.writeUInt16LE(32, at + 6);
-        header.writeUInt32LE(data.length, at + 8); header.writeUInt32LE(offset, at + 12);
+        const at = 6 + 16 * index,
+            size = icoSizes[index] === 256 ? 0 : icoSizes[index];
+        header.writeUInt8(size, at);
+        header.writeUInt8(size, at + 1);
+        header.writeUInt16LE(1, at + 4);
+        header.writeUInt16LE(32, at + 6);
+        header.writeUInt32LE(data.length, at + 8);
+        header.writeUInt32LE(offset, at + 12);
         offset += data.length;
     });
     await writeFile(path.join(icons, 'furnace.ico'), Buffer.concat([header, ...images]));

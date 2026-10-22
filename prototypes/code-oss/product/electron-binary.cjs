@@ -14,7 +14,9 @@ function electronBinary(execPath = process.execPath, platform = process.platform
     try {
         const binaries = fs.readdirSync(path.join(bundle, 'Contents/MacOS'));
         return binaries.length === 1 ? path.join(bundle, 'Contents/MacOS', binaries[0]) : execPath;
-    } catch { return execPath; }
+    } catch {
+        return execPath;
+    }
 }
 
 module.exports = { electronBinary };

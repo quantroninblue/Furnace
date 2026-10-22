@@ -13,15 +13,21 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 const { AssistantClient } = require('../product/assistant-client.cjs');
 const [executable, extension, ...flags] = process.argv.slice(2);
-if (!executable || !extension) throw new Error('Usage: node scripts/connections-smoke.mjs <app binary> <extension dir> [--sign-in]');
+if (!executable || !extension)
+    throw new Error('Usage: node scripts/connections-smoke.mjs <app binary> <extension dir> [--sign-in]');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const directory = await mkdtemp(path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'furnace-connections-'));
 const client = new AssistantClient({ executable, entry: path.join(extension, 'assistant/entry.cjs'), directory });
 try {
     const status = await client.status();
-    console.log(`Connection service answered: secure storage ${JSON.stringify(status.secureStorage)}, ChatGPT ${JSON.stringify({ accounts: status.chatgpt?.accounts?.length ?? 0, pending: status.chatgpt?.pending })}`);
+    console.log(
+        `Connection service answered: secure storage ${JSON.stringify(status.secureStorage)}, ChatGPT ${JSON.stringify({ accounts: status.chatgpt?.accounts?.length ?? 0, pending: status.chatgpt?.pending })}`,
+    );
     if (flags.includes('--sign-in')) {
-        const flow = client.connection({ action: 'signIn', remember: false }).then(() => 'finished', error => error.message);
+        const flow = client.connection({ action: 'signIn', remember: false }).then(
+            () => 'finished',
+            error => error.message,
+        );
         const early = await Promise.race([flow, sleep(20000).then(() => null)]);
         if (early) throw new Error(`ChatGPT sign-in stopped before waiting for the browser: ${early}`);
         const waiting = await client.status();

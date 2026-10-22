@@ -16,7 +16,7 @@ exports.run = async () => {
     };
     const waitFor = async condition => {
         const end = Date.now() + 60000;
-        while (!await condition()) {
+        while (!(await condition())) {
             if (Date.now() > end) throw new Error('Timed out waiting for review GUI');
             await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -27,7 +27,12 @@ exports.run = async () => {
         const document = await vscode.workspace.openTextDocument(uri);
         const setText = async (doc, text) => {
             const editor = await vscode.window.showTextDocument(doc, { preview: false });
-            assert.equal(await editor.edit(edit => edit.replace(new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), text)), true);
+            assert.equal(
+                await editor.edit(edit =>
+                    edit.replace(new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), text),
+                ),
+                true,
+            );
         };
         const propose = async () => {
             await vscode.window.showTextDocument(document);
@@ -45,7 +50,10 @@ exports.run = async () => {
         const review = api.reviews.review;
         const base = await vscode.workspace.openTextDocument(review.base);
         assert.equal(base.getText(), proposal.text);
-        await assert.rejects(vscode.workspace.fs.writeFile(review.base, Buffer.from('tamper')), /read-only|permissions/i);
+        await assert.rejects(
+            vscode.workspace.fs.writeFile(review.base, Buffer.from('tamper')),
+            /read-only|permissions/i,
+        );
         checks.push('unsaved buffer read through adapter', 'immutable captured base', 'proposal leaves disk unchanged');
         await report('review-ready');
         await waitFor(() => document.getText() === 'Human reviewed replacement.\n');
@@ -55,7 +63,12 @@ exports.run = async () => {
         await vscode.window.showTextDocument(document);
         await vscode.commands.executeCommand('undo');
         assert.equal(document.getText(), 'Unsaved user draft.\n');
-        checks.push('GUI editable diff and apply', 'apply does not save', 'approval consumed', 'IDE undo preserves prior unsaved text');
+        checks.push(
+            'GUI editable diff and apply',
+            'apply does not save',
+            'approval consumed',
+            'IDE undo preserves prior unsaved text',
+        );
 
         await propose();
         await setText(document, 'Concurrent user edit.\n');
@@ -89,7 +102,8 @@ exports.run = async () => {
         // Save only as an explicit user-style operation, then close/reopen.
         await document.save();
         await propose();
-        const sourceTabs = vscode.window.tabGroups.all.flatMap(group => group.tabs)
+        const sourceTabs = vscode.window.tabGroups.all
+            .flatMap(group => group.tabs)
             .filter(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === uri.toString());
         assert.ok(sourceTabs.length > 0);
         await vscode.window.tabGroups.close(sourceTabs);
@@ -106,7 +120,10 @@ exports.run = async () => {
         assert.equal(reopened.getText(), 'Concurrent user edit.\n');
         checks.push('workspace-folder change expires approval');
 
-        const untitled = await vscode.workspace.openTextDocument({ content: 'Untitled draft.\n', language: 'plaintext' });
+        const untitled = await vscode.workspace.openTextDocument({
+            content: 'Untitled draft.\n',
+            language: 'plaintext',
+        });
         await vscode.window.showTextDocument(untitled, { preview: true });
         assert.equal((await vscode.commands.executeCommand('aiGui.proposeFixture')).text, 'Untitled draft.\n');
         await apply();
@@ -119,7 +136,7 @@ exports.run = async () => {
         await vscode.commands.executeCommand('aiGui.proposeFixture');
         await report('complete');
         // Keep the pending proposal for a real process-restart expiry check.
-        await waitFor(async () => !!await fs.stat(path.join(directory, 'finish')).catch(() => false));
+        await waitFor(async () => !!(await fs.stat(path.join(directory, 'finish')).catch(() => false)));
     } catch (error) {
         await report('failed', { error: error.stack });
         throw error;

@@ -8,17 +8,28 @@ exports.run = async () => {
     const checks = [];
     const report = async value => {
         const target = path.join(directory, 'browser-report.json');
-        await fs.writeFile(`${target}.tmp`, JSON.stringify({ checks, ...value }, null, 2)); await fs.rename(`${target}.tmp`, target);
+        await fs.writeFile(`${target}.tmp`, JSON.stringify({ checks, ...value }, null, 2));
+        await fs.rename(`${target}.tmp`, target);
     };
     const until = async condition => {
         const deadline = Date.now() + 20000;
-        while (!await condition()) { if (Date.now() > deadline) throw new Error('Timed out waiting for browser integration'); await new Promise(resolve => setTimeout(resolve, 50)); }
+        while (!(await condition())) {
+            if (Date.now() > deadline) throw new Error('Timed out waiting for browser integration');
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
     };
-    const server = http.createServer((_req, res) => res.end('<!doctype html><title>Integrated research reference</title><p id=passage>Controlled reference</p><form>FORM_SECRET</form><p hidden>HIDDEN_SECRET</p><script>const range=document.createRange();range.selectNodeContents(document.getElementById("passage"));getSelection().removeAllRanges();getSelection().addRange(range);</script>'));
+    const server = http.createServer((_req, res) =>
+        res.end(
+            '<!doctype html><title>Integrated research reference</title><p id=passage>Controlled reference</p><form>FORM_SECRET</form><p hidden>HIDDEN_SECRET</p><script>const range=document.createRange();range.selectNodeContents(document.getElementById("passage"));getSelection().removeAllRanges();getSelection().addRange(range);</script>',
+        ),
+    );
     let api;
     try {
         api = await vscode.extensions.getExtension('ai-gui.workspace-product').activate();
-        const document = await vscode.workspace.openTextDocument({ content: 'Unsaved coding draft.', language: 'plaintext' });
+        const document = await vscode.workspace.openTextDocument({
+            content: 'Unsaved coding draft.',
+            language: 'plaintext',
+        });
         await vscode.window.showTextDocument(document);
         const before = document.getText();
         await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -29,7 +40,9 @@ exports.run = async () => {
         await until(() => api.research.snapshot().title === 'Integrated research reference');
         const first = api.research.client;
         assert.equal(document.getText(), before);
-        checks.push('browser starts only after explicit GUI action; actual bundled host loads local reference; unsaved document preserved');
+        checks.push(
+            'browser starts only after explicit GUI action; actual bundled host loads local reference; unsaved document preserved',
+        );
         await report({ stage: 'browser-ready', url });
         await until(() => api.research.sources.sources.size === 2);
         assert.equal(api.research.sources.context().length, 0);
@@ -40,41 +53,59 @@ exports.run = async () => {
         await until(() => api.research.sources.context().length === 1);
         assert.equal(document.getText(), before);
         await api.conversation.save();
-        checks.push('GUI page/selection capture saves title, URL and text without sharing; explicit checkbox shares; editor preserved');
+        checks.push(
+            'GUI page/selection capture saves title, URL and text without sharing; explicit checkbox shares; editor preserved',
+        );
         await report({ stage: 'shared', url });
         await until(() => !api.research.client);
-        await first.exited; await assert.rejects(fs.stat(first.profile), { code: 'ENOENT' });
+        await first.exited;
+        await assert.rejects(fs.stat(first.profile), { code: 'ENOENT' });
         assert.equal(api.research.sources.sources.size, 2);
         checks.push('Close Browser UI removes companion/profile and preserves saved sources');
-        await api.research.open(url); await until(() => api.research.snapshot().title === 'Integrated research reference');
+        await api.research.open(url);
+        await until(() => api.research.snapshot().title === 'Integrated research reference');
         const nativeClosed = api.research.client;
         assert.notEqual(nativeClosed.host, first.host);
-        await nativeClosed.request('close'); await nativeClosed.exited;
+        await nativeClosed.request('close');
+        await nativeClosed.exited;
         assert.equal(api.research.snapshot().opened, false);
         checks.push('host-originated closure updates extension; reopening gets fresh identity');
-        await api.research.open(url); await until(() => api.research.snapshot().title === 'Integrated research reference');
+        await api.research.open(url);
+        await until(() => api.research.snapshot().title === 'Integrated research reference');
         const scopeClosed = api.research.client;
         const folder = vscode.Uri.file(path.join(directory, 'scope-change'));
         await fs.mkdir(folder.fsPath);
-        assert.equal(vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders.length, 0, { uri: folder }), true);
-        await until(() => scopeClosed.closed); await scopeClosed.exited;
+        assert.equal(
+            vscode.workspace.updateWorkspaceFolders(vscode.workspace.workspaceFolders.length, 0, { uri: folder }),
+            true,
+        );
+        await until(() => scopeClosed.closed);
+        await scopeClosed.exited;
         assert.equal(api.research.snapshot().opened, false);
         assert.equal(api.research.sources.sources.size, 0);
         checks.push('real workspace-folder change clears captures/sharing and closes companion');
         const opening = api.research.open(url);
         const rejection = assert.rejects(opening, /scope|closed/i);
-        await api.research.resetScope(); await rejection;
+        await api.research.resetScope();
+        await rejection;
         assert.equal(api.research.snapshot().busy, false);
         checks.push('scope change during startup cannot revive a browser');
-        await api.research.open(url); await until(() => api.research.snapshot().title === 'Integrated research reference');
+        await api.research.open(url);
+        await until(() => api.research.snapshot().title === 'Integrated research reference');
         const crashed = api.research.client;
-        process.kill(crashed.child.pid, 'SIGKILL'); await crashed.exited;
+        process.kill(crashed.child.pid, 'SIGKILL');
+        await crashed.exited;
         assert.equal(api.research.snapshot().opened, false);
-        await api.research.open(url); await until(() => api.research.snapshot().title === 'Integrated research reference');
+        await api.research.open(url);
+        await until(() => api.research.snapshot().title === 'Integrated research reference');
         checks.push('companion crash is visible and browser can reopen');
         assert.equal(document.getText(), before);
         const client = api.research.client;
         await report({ stage: 'complete', pid: client.child.pid, profile: client.profile });
-    } catch (error) { await report({ stage: 'failed', error: error.stack }); await api?.research.dispose(); server.close(); }
+    } catch (error) {
+        await report({ stage: 'failed', error: error.stack });
+        await api?.research.dispose();
+        server.close();
+    }
     await new Promise(() => {});
 };
