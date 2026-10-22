@@ -34,6 +34,9 @@ export class BackgroundProcesses {
     };
     child.once("error", error => { collect(`${error.message}\n`); finish(null); });
     child.once("close", code => finish(code));
+    // A grandchild that outlives the shell (common on Windows) can hold the pipes open, so
+    // "close" never comes; the shell exiting ends it, after a moment for its last output.
+    child.once("exit", code => { setTimeout(() => finish(code), 1000).unref(); });
     // A detached group survives our parent; make sure the IDE closing ends it.
     entry.stop = () => { stop(); setTimeout(() => kill("SIGKILL"), 3000).unref(); };
     this.log(entry, "started"); this.changed();
