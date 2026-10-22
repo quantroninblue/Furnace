@@ -81,13 +81,15 @@ if (platform === 'darwin') {
     await updater.startInstaller({ target, staged, dir, pid: furnace.pid });
     await updater.requestRelaunch(dir);
     // End Furnace's whole process tree: the install script, started through WMI, must survive it.
-    execFileSync('taskkill', ['/PID', String(furnace.pid), '/T', '/F'], { stdio: 'inherit' });
+    // taskkill exits non-zero when a child ends on its own mid-kill, so check the result instead.
+    try { execFileSync('taskkill', ['/PID', String(furnace.pid), '/T', '/F'], { stdio: 'inherit' }); } catch { /* Checked below. */ }
+    await waitFor('Furnace to end', () => { try { process.kill(furnace.pid, 0); return false; } catch { return true; } }, 30);
     await waitFor('the installer to finish', () => existsSync(path.join(dir, 'install.log')) && /installer exited with/.test(readFileSync(path.join(dir, 'install.log'), 'utf8')), 300);
     const log = readFileSync(path.join(dir, 'install.log'), 'utf8');
     if (!/installer exited with 0/.test(log)) throw new Error(`The installer failed:\n${log}\n${existsSync(path.join(dir, 'install.log.setup.txt')) ? readFileSync(path.join(dir, 'install.log.setup.txt'), 'utf8').slice(-4000) : ''}`);
     if (existsSync(marker)) throw new Error('Furnace was not reinstalled (the old files are still there).');
     await waitFor('Furnace to open again', () => running('Furnace.exe'), 60);
-    execFileSync('taskkill', ['/IM', 'Furnace.exe', '/T', '/F'], { stdio: 'inherit' });
+    try { execFileSync('taskkill', ['/IM', 'Furnace.exe', '/T', '/F'], { stdio: 'inherit' }); } catch { /* Cleanup only. */ }
     console.log(`Windows update install PASS:\n${log}`);
 } else if (platform === 'linux') {
     const [deb] = args.map(file => path.resolve(file));
