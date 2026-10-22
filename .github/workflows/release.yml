@@ -30,19 +30,18 @@ jobs:
       UPSTREAM: prototypes/code-oss/upstream
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Read the upstream pin
         id: pin
         run: |
           echo "tag=$(node -p "require('./prototypes/code-oss/upstream-pin.json').tag")" >> "$GITHUB_OUTPUT"
           echo "node=$(node -p "require('./prototypes/code-oss/upstream-pin.json').node")" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ steps.pin.outputs.node }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
@@ -86,7 +85,7 @@ jobs:
         run: node prototypes/code-oss/scripts/package-macos.mjs assemble arm64
 
       # Upload before the checks, so a failing check still leaves the build to inspect.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Furnace-darwin-arm64
           path: |
@@ -146,19 +145,18 @@ jobs:
       - name: Keep LF line endings
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Read the upstream pin
         id: pin
         run: |
           echo "tag=$(node -p "require('./prototypes/code-oss/upstream-pin.json').tag")" >> "$GITHUB_OUTPUT"
           echo "node=$(node -p "require('./prototypes/code-oss/upstream-pin.json').node")" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ steps.pin.outputs.node }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
@@ -211,7 +209,7 @@ jobs:
           cd ../../.. && node prototypes/code-oss/scripts/package-windows.mjs collect x64
 
       # Upload before the checks, so a failing check still leaves the build to inspect.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Furnace-win32-x64
           path: |
@@ -259,19 +257,18 @@ jobs:
       UPSTREAM: prototypes/code-oss/upstream
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Read the upstream pin
         id: pin
         run: |
           echo "tag=$(node -p "require('./prototypes/code-oss/upstream-pin.json').tag")" >> "$GITHUB_OUTPUT"
           echo "node=$(node -p "require('./prototypes/code-oss/upstream-pin.json').node")" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ steps.pin.outputs.node }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
@@ -328,7 +325,7 @@ jobs:
           rpm -qip ../.cache/dist/Furnace-linux-x64.rpm
 
       # Upload before the checks, so a failing check still leaves the build to inspect.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Furnace-linux-x64
           path: |
@@ -394,9 +391,8 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
 
@@ -406,7 +402,7 @@ jobs:
           test "v$version" = "$TAG" || { echo "Tag $TAG does not match the product version $version"; exit 1; }
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
