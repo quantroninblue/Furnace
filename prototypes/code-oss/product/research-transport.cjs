@@ -35,7 +35,9 @@ class ResearchTransport extends EventEmitter {
             if (/^(ELECTRON_|VSCODE_|NODE_OPTIONS$|NODE_PATH$)/.test(key)) delete childEnv[key];
         }
         this.child = spawn(executable, [entry, '--research-host', this.host, this.scope, this.page, this.profile], {
-            env: childEnv, stdio: ['ignore', 'ignore', 'ignore', 'pipe'], detached: process.platform === 'linux',
+            // 'overlapped' (same as 'pipe' off Windows): a non-overlapped Windows pipe blocks the host's
+            // writes while its read waits, so replies would stall until the next request.
+            env: childEnv, stdio: ['ignore', 'ignore', 'ignore', 'overlapped'], detached: process.platform === 'linux',
         });
         this.pipe = this.child.stdio[3];
         this.exited = new Promise(resolve => { this.resolveExit = resolve; });
