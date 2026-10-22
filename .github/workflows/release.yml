@@ -367,7 +367,11 @@ jobs:
           pkill -f /usr/share/furnace/furnace || true
 
       - name: Update installs in place (quit, reinstall the package, reopen)
-        run: xvfb-run -a node prototypes/code-oss/scripts/update-smoke.mjs linux prototypes/code-oss/.cache/dist/Furnace-linux-x64.deb
+        # Furnace installs updates only where pkexec exists (desktop Ubuntu has it; the 24.04 runner
+        # image doesn't). The test itself elevates with sudo.
+        run: |
+          sudo apt-get install -y pkexec
+          xvfb-run -a node prototypes/code-oss/scripts/update-smoke.mjs linux prototypes/code-oss/.cache/dist/Furnace-linux-x64.deb
 
       - name: Connection service starts
         run: xvfb-run -a node prototypes/code-oss/scripts/connections-smoke.mjs /usr/share/furnace/furnace /usr/share/furnace/resources/app/extensions/furnace-workspace
