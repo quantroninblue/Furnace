@@ -350,9 +350,10 @@ jobs:
           test ! -e /usr/share/keyrings/microsoft.gpg
           test -L /usr/bin/furnace
           test "$(stat -c '%a %U' /usr/share/furnace/chrome-sandbox)" = "4755 root"
-          # The app entry refuses host entries outside its built-in extensions.
+          # The app entry refuses host entries outside its built-in extensions. xvfb-run sends the
+          # program's stderr to stdout, so capture both.
           echo "require('fs').writeFileSync(process.env.RUNNER_TEMP + '/ran', 'yes')" > "$RUNNER_TEMP/outside.cjs"
-          if xvfb-run -a /usr/share/furnace/furnace "$RUNNER_TEMP/outside.cjs" --assistant-service "$RUNNER_TEMP" 2> "$RUNNER_TEMP/refused.txt"; then echo "outside entry was not refused"; exit 1; fi
+          if xvfb-run -a /usr/share/furnace/furnace "$RUNNER_TEMP/outside.cjs" --assistant-service "$RUNNER_TEMP" > "$RUNNER_TEMP/refused.txt" 2>&1; then echo "outside entry was not refused"; exit 1; fi
           grep -q 'refusing to run' "$RUNNER_TEMP/refused.txt"
           test ! -e "$RUNNER_TEMP/ran"
           # The release build carries the update feed and its public key.
