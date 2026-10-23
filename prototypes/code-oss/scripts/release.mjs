@@ -54,20 +54,27 @@ export const releaseIcons = [
     ['furnace.png', 'linux/code.png'],
 ];
 
-/** Pinned upstream: product patches, then release-only ones; Furnace product.json and icons. */
-export async function prepare() {
+/**
+ * Pinned upstream: product patches, then release-only ones; Furnace product.json and icons.
+ * `cached`: the checkout comes from the release workflow's cache, saved after this step and the
+ * dependency install (its key covers the pin and the patches), so it is already patched; only the
+ * product identity and icons, which can change without invalidating the cache, are applied again.
+ */
+export async function prepare({ cached = false } = {}) {
     const pin = JSON.parse(await readFile(path.join(root, 'upstream-pin.json'), 'utf8'));
     if (git('rev-parse', 'HEAD') !== pin.commit)
         throw new Error(`upstream is not at the pinned ${pin.tag} (${pin.commit})`);
-    if (git('status', '--porcelain'))
-        throw new Error(`${upstream} has changes; prepare needs a fresh checkout of the pinned source.`);
-    const patches = (await readdir(path.join(root, 'patches')))
-        .filter(name => name.endsWith('.patch'))
-        .sort((a, b) => Number(a.startsWith('release-')) - Number(b.startsWith('release-')) || a.localeCompare(b));
-    for (const name of patches) {
-        git('apply', path.join(root, 'patches', name));
-        console.log(`Applied: ${name}`);
-    }
+    if (!cached) {
+        if (git('status', '--porcelain'))
+            throw new Error(`${upstream} has changes; prepare needs a fresh checkout of the pinned source.`);
+        const patches = (await readdir(path.join(root, 'patches')))
+            .filter(name => name.endsWith('.patch'))
+            .sort((a, b) => Number(a.startsWith('release-')) - Number(b.startsWith('release-')) || a.localeCompare(b));
+        for (const name of patches) {
+            git('apply', path.join(root, 'patches', name));
+            console.log(`Applied: ${name}`);
+        }
+    } else console.log('Cached checkout: patches already applied.');
     const productFile = path.join(upstream, 'product.json');
     const overrides = JSON.parse(await readFile(path.join(root, 'product.overrides.json'), 'utf8'));
     const product = { ...JSON.parse(await readFile(productFile, 'utf8')), ...overrides, ...releaseProduct };

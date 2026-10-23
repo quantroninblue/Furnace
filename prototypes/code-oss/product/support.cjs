@@ -134,6 +134,12 @@ function createSupport({
             return latest;
         }
         if (!manual && context.globalState.get('updateSkipped') === latest.version) return latest;
+        // A release can ship before every platform's build (CI publishes what passed): until this
+        // platform's download is added, the release page has nothing for it, so don't offer it yet.
+        if (!updater.releasedFor(latest)) {
+            if (manual) status(`Furnace ${latest.version} is out, but not for this computer yet. It follows soon.`);
+            return null;
+        }
         const target = updater.installTarget({ appRoot: vscode.env.appRoot });
         const asset = target.ok ? latest.assets[updater.assetKey(target)] : latest.assets[updater.platformKey()];
         const inPlace = Boolean(updates.publicKey && asset && target.ok);

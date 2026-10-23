@@ -41,6 +41,16 @@ const platformKey = (platform = process.platform, arch = process.arch) => `${pla
 /** The feed key for an install target: Linux adds its package type ("linux-x64-deb"). */
 const assetKey = (target, arch = process.arch) =>
     target.package ? `${platformKey(target.platform, arch)}-${target.package}` : platformKey(target.platform, arch);
+/**
+ * Whether a feed's release includes this platform. A feed with assets but none for this platform
+ * means its build isn't published yet (releases ship what passed CI); feeds without assets list
+ * only a release page, which serves every platform.
+ */
+const releasedFor = (feed, platform = process.platform, arch = process.arch) => {
+    const keys = Object.keys(feed.assets || {}),
+        own = platformKey(platform, arch);
+    return !keys.length || keys.some(key => key === own || key.startsWith(`${own}-`));
+};
 
 /**
  * Validates an update feed: { version, url, notes?, assets? } with an https release page. Each asset
@@ -367,6 +377,7 @@ module.exports = {
     newer,
     platformKey,
     assetKey,
+    releasedFor,
     readFeed,
     verifyFeed,
     fetchFeed,

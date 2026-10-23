@@ -2,16 +2,55 @@
 # macOS (Apple Silicon, ad-hoc signed .dmg, not notarized), Windows (x64 per-user installer, not
 # code-signed) and Linux (x64 .deb and .rpm), from the same commit.
 #
-# A tag like v0.2.0 (matching the version in prototypes/code-oss/product/package.json) builds all three,
+# A tag like v0.2.1 (matching the version in prototypes/code-oss/product/package.json) builds all three,
 # then makes a DRAFT GitHub Release with the downloads and the signed update feed (latest.json and
-# latest.json.sig). Nothing reaches testers until the draft is published by hand; publishing makes it
-# the release that releases/latest/download/latest.json points to, so installed copies offer it.
-# Tags with a suffix (v0.2.0-test1) only build: the downloads stay as 14-day workflow artifacts.
+# latest.json.sig) of every platform that passed. Nothing reaches testers until the draft is published by
+# hand; publishing makes it the release that releases/latest/download/latest.json points to, so installed
+# copies offer it. A platform that failed is left out of the release and its feed (its installed copies
+# keep their version and the landing page keeps linking its previous download): re-run its failed job
+# (`gh run rerun <run> --failed`) to add it, even after publishing. A failure that needs a code fix ships
+# in the next version instead.
+#
+# Pushes to main and pull requests that change the release build, a twice-weekly run on main, and manual
+# runs build and check all three without releasing. The runs on main also keep the cache of the prepared
+# Code OSS source and its dependencies (the slowest part) warm: tags restore main's cache.
+# Tags with a suffix (v0.2.1-test1) only build too: the downloads stay as 14-day workflow artifacts.
 name: Release
 
 on:
   push:
     tags: ['v*']
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+      - prototypes/code-oss/upstream-pin.json
+      - prototypes/code-oss/patches/**
+      - prototypes/code-oss/product.overrides.json
+      - prototypes/code-oss/release/**
+      - prototypes/code-oss/scripts/release.mjs
+      - prototypes/code-oss/scripts/release-feed.mjs
+      - prototypes/code-oss/scripts/package-*.mjs
+      - prototypes/code-oss/scripts/update-smoke.mjs
+      - prototypes/code-oss/scripts/connections-smoke.mjs
+      - prototypes/code-oss/product/updater.cjs
+      - prototypes/code-oss/product/assistant/**
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - prototypes/code-oss/upstream-pin.json
+      - prototypes/code-oss/patches/**
+      - prototypes/code-oss/product.overrides.json
+      - prototypes/code-oss/release/**
+      - prototypes/code-oss/scripts/release.mjs
+      - prototypes/code-oss/scripts/release-feed.mjs
+      - prototypes/code-oss/scripts/package-*.mjs
+      - prototypes/code-oss/scripts/update-smoke.mjs
+      - prototypes/code-oss/scripts/connections-smoke.mjs
+      - prototypes/code-oss/product/updater.cjs
+      - prototypes/code-oss/product/assistant/**
+  schedule:
+    # Mondays and Thursdays: GitHub drops caches unused for 7 days.
+    - cron: '23 4 * * 1,4'
   workflow_dispatch:
 
 permissions:
@@ -51,13 +90,24 @@ jobs:
           python3 -m pip install setuptools
           df -h .
 
+      # The patched upstream with its installed dependencies, saved after "Install Code OSS dependencies"
+      # by runs on main. The key covers what that state depends on: the pin and the patches.
+      - name: Restore the prepared Code OSS source and its dependencies
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UPSTREAM }}
+          key: upstream-v1-${{ runner.os }}-arm64-${{ hashFiles('prototypes/code-oss/upstream-pin.json', 'prototypes/code-oss/patches/**') }}
+
       - name: Fetch the pinned Code OSS source
+        if: steps.cache.outputs.cache-hit != 'true'
         run: git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" https://github.com/microsoft/vscode.git "$UPSTREAM"
 
       - name: Patch upstream and set the Furnace product identity and icons
-        run: node prototypes/code-oss/scripts/package-macos.mjs prepare
+        run: node prototypes/code-oss/scripts/package-macos.mjs prepare ${{ steps.cache.outputs.cache-hit == 'true' && '--cached' || '' }}
 
       - name: Install Code OSS dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         working-directory: ${{ env.UPSTREAM }}
         env:
           npm_config_arch: arm64
@@ -72,6 +122,14 @@ jobs:
           done
           exit 1
 
+      # Only main saves: tags and pull requests can restore main's caches, but not each other's.
+      - name: Cache the prepared Code OSS source and its dependencies
+        if: steps.cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UPSTREAM }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
       - name: Build and package Code OSS (darwin-arm64, minified)
         working-directory: ${{ env.UPSTREAM }}
         run: npm run gulp vscode-darwin-arm64-min
@@ -84,7 +142,8 @@ jobs:
       - name: Assemble, sign ad hoc, make the .dmg and the update .zip
         run: node prototypes/code-oss/scripts/package-macos.mjs assemble arm64
 
-      # Upload before the checks, so a failing check still leaves the build to inspect.
+      # Upload before the checks, so a failing check still leaves the build to inspect (the release
+      # job only takes platforms whose checks passed). Overwrite: a re-run uploads again.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Furnace-darwin-arm64
@@ -93,6 +152,7 @@ jobs:
             prototypes/code-oss/.cache/dist/Furnace-darwin-arm64.zip
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
       - name: Furnace tests on macOS (includes the real Seatbelt sandbox test)
         run: |
@@ -169,13 +229,23 @@ jobs:
           test -x "$sdk/signtool.exe"
           cygpath -w "$sdk" >> "$GITHUB_PATH"
 
+      # See the macOS job.
+      - name: Restore the prepared Code OSS source and its dependencies
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UPSTREAM }}
+          key: upstream-v1-${{ runner.os }}-x64-${{ hashFiles('prototypes/code-oss/upstream-pin.json', 'prototypes/code-oss/patches/**') }}
+
       - name: Fetch the pinned Code OSS source
+        if: steps.cache.outputs.cache-hit != 'true'
         run: git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" https://github.com/microsoft/vscode.git "$UPSTREAM"
 
       - name: Patch upstream and set the Furnace product identity and icons
-        run: node prototypes/code-oss/scripts/package-windows.mjs prepare
+        run: node prototypes/code-oss/scripts/package-windows.mjs prepare ${{ steps.cache.outputs.cache-hit == 'true' && '--cached' || '' }}
 
       - name: Install Code OSS dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         working-directory: ${{ env.UPSTREAM }}
         env:
           npm_config_arch: x64
@@ -188,6 +258,13 @@ jobs:
             echo "npm ci failed (attempt $i), retrying"
           done
           exit 1
+
+      - name: Cache the prepared Code OSS source and its dependencies
+        if: steps.cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UPSTREAM }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
       - name: Build and package Code OSS (win32-x64, minified)
         working-directory: ${{ env.UPSTREAM }}
@@ -217,6 +294,7 @@ jobs:
             prototypes/code-oss/.cache/dist/READ ME FIRST.txt
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
       - name: Furnace tests on Windows
         run: |
@@ -280,13 +358,23 @@ jobs:
           python3 -m pip install setuptools
           df -h .
 
+      # See the macOS job.
+      - name: Restore the prepared Code OSS source and its dependencies
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UPSTREAM }}
+          key: upstream-v1-${{ runner.os }}-x64-${{ hashFiles('prototypes/code-oss/upstream-pin.json', 'prototypes/code-oss/patches/**') }}
+
       - name: Fetch the pinned Code OSS source
+        if: steps.cache.outputs.cache-hit != 'true'
         run: git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" https://github.com/microsoft/vscode.git "$UPSTREAM"
 
       - name: Patch upstream and set the Furnace product identity and icons
-        run: node prototypes/code-oss/scripts/package-linux.mjs prepare
+        run: node prototypes/code-oss/scripts/package-linux.mjs prepare ${{ steps.cache.outputs.cache-hit == 'true' && '--cached' || '' }}
 
       - name: Install Code OSS dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         working-directory: ${{ env.UPSTREAM }}
         env:
           npm_config_arch: x64
@@ -298,6 +386,13 @@ jobs:
             echo "npm ci failed (attempt $i), retrying"
           done
           exit 1
+
+      - name: Cache the prepared Code OSS source and its dependencies
+        if: steps.cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.UPSTREAM }}
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
       - name: Build and package Code OSS (linux-x64, minified)
         working-directory: ${{ env.UPSTREAM }}
@@ -323,6 +418,10 @@ jobs:
           node ../scripts/package-linux.mjs collect x64
           dpkg-deb --info ../.cache/dist/Furnace-linux-x64.deb
           rpm -qip ../.cache/dist/Furnace-linux-x64.rpm
+          # Both carry Furnace's version (with epoch 1), not Code OSS's.
+          version="$(node -p "require('../product/package.json').version")"
+          test "$(dpkg-deb -f ../.cache/dist/Furnace-linux-x64.deb Version)" = "1:$version"
+          test "$(rpm -qp --qf '%{EPOCH}:%{VERSION}' ../.cache/dist/Furnace-linux-x64.rpm)" = "1:$version"
 
       # Upload before the checks, so a failing check still leaves the build to inspect.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -333,6 +432,7 @@ jobs:
             prototypes/code-oss/.cache/dist/Furnace-linux-x64.rpm
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
       - name: Furnace tests on Linux
         run: |
@@ -381,8 +481,11 @@ jobs:
   release:
     name: Draft release
     needs: [macos, windows, linux]
-    # Only plain version tags (v0.2.0) become releases; v0.2.0-test1 and manual runs only build.
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    # Plain version tags (v0.2.1) only; suffixed tags, main, pull requests and manual runs only build.
+    # Runs when at least one platform passed, and releases only those.
+    if: >-
+      !cancelled() && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') &&
+      (needs.macos.result == 'success' || needs.windows.result == 'success' || needs.linux.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -404,34 +507,73 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: dist
+          path: built
           merge-multiple: true
+
+      # A failed platform's job may still have uploaded its build (uploads come before the checks).
+      - name: Keep the platforms that passed
+        env:
+          MACOS: ${{ needs.macos.result }}
+          WINDOWS: ${{ needs.windows.result }}
+          LINUX: ${{ needs.linux.result }}
+        run: |
+          mkdir dist
+          included=() missing=()
+          if [ "$MACOS" = success ]; then cp built/Furnace-darwin-arm64.dmg built/Furnace-darwin-arm64.zip dist/; included+=(macOS); else missing+=(macOS); fi
+          if [ "$WINDOWS" = success ]; then cp built/FurnaceUserSetup-x64.exe dist/; included+=(Windows); else missing+=(Windows); fi
+          if [ "$LINUX" = success ]; then cp built/Furnace-linux-x64.deb built/Furnace-linux-x64.rpm dist/; included+=(Linux); else missing+=(Linux); fi
+          echo "INCLUDED=${included[*]}" >> "$GITHUB_ENV"
+          echo "MISSING=${missing[*]}" >> "$GITHUB_ENV"
+          ls -l dist
 
       - name: Sign the update feed
         env:
           FURNACE_UPDATE_KEY: ${{ secrets.FURNACE_UPDATE_KEY }}
         run: node prototypes/code-oss/scripts/release-feed.mjs "$VERSION" dist
 
-      - name: Create or update the draft release
+      - name: Create or update the release
         run: |
           state="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
-          if [ "$state" = false ]; then echo "$TAG is already published; make a new version instead."; exit 1; fi
-          files=(dist/Furnace-darwin-arm64.dmg dist/Furnace-darwin-arm64.zip dist/FurnaceUserSetup-x64.exe dist/Furnace-linux-x64.deb dist/Furnace-linux-x64.rpm dist/latest.json dist/latest.json.sig)
-          if [ "$state" = missing ]; then
-            cat > notes.md <<EOF
-          ## Furnace $VERSION
-
-          _Write what's new here before publishing._
-
-          ### Install
-          - **macOS (Apple Silicon):** download \`Furnace-darwin-arm64.dmg\`, drag Furnace to Applications, then open it with System Settings → Privacy & Security → **Open Anyway** (Furnace isn't notarized yet).
-          - **Windows (x64):** run \`FurnaceUserSetup-x64.exe\`. If SmartScreen appears, choose **More info → Run anyway** (the installer isn't code-signed yet).
-          - **Linux (x64):** Ubuntu or Debian: \`sudo apt install ./Furnace-linux-x64.deb\`. Fedora: \`sudo dnf install ./Furnace-linux-x64.rpm\`.
-
-          Already using Furnace 0.2.0 or later? It offers this update by itself and installs it in place.
-          EOF
-            gh release create "$TAG" --draft --verify-tag --title "Furnace $VERSION" --notes-file notes.md "${files[@]}"
-          else
-            gh release upload "$TAG" --clobber "${files[@]}"
+          downloads=(dist/Furnace*)
+          if [ "$state" = false ]; then
+            # Published: only add platforms it doesn't have yet (a re-run of a failed job), never
+            # replace a published download. The new feed lists every platform of this run, so the
+            # downloads already published must be this run's builds.
+            published="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name | startswith("Furnace")) | .name + " " + (.digest // "")')"
+            new=()
+            for file in "${downloads[@]}"; do
+              name="$(basename "$file")"
+              digest="$(awk -v n="$name" '$1 == n { print $2 }' <<< "$published")"
+              if ! grep -q "^$name " <<< "$published"; then new+=("$file"); continue; fi
+              test "$digest" = "sha256:$(sha256sum "$file" | cut -d' ' -f1)" || { echo "$TAG is published with a different $name than this run built; make a new version instead."; exit 1; }
+            done
+            while read -r name _; do
+              [ -z "$name" ] || [ -e "dist/$name" ] || { echo "$TAG is published with $name, which this run didn't build; make a new version instead."; exit 1; }
+            done <<< "$published"
+            [ "${#new[@]}" -gt 0 ] || { echo "$TAG is already published with every platform that passed; make a new version instead."; exit 1; }
+            gh release upload "$TAG" "${new[@]}"
+            gh release upload "$TAG" --clobber dist/latest.json dist/latest.json.sig
+            echo "Added to the published $TAG: ${new[*]}" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-          echo "Draft release ready: publish it on GitHub to ship $TAG." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$state" = missing ]; then
+            {
+              echo "## Furnace $VERSION"
+              echo
+              echo "_Write what's new here before publishing._"
+              echo
+              echo "### Install"
+              if [ -e dist/Furnace-darwin-arm64.dmg ]; then echo "- **macOS (Apple Silicon):** download \`Furnace-darwin-arm64.dmg\`, drag Furnace to Applications, then open it with System Settings → Privacy & Security → **Open Anyway** (Furnace isn't notarized yet)."; fi
+              if [ -e dist/FurnaceUserSetup-x64.exe ]; then echo "- **Windows (x64):** run \`FurnaceUserSetup-x64.exe\`. If SmartScreen appears, choose **More info → Run anyway** (the installer isn't code-signed yet)."; fi
+              if [ -e dist/Furnace-linux-x64.deb ]; then echo "- **Linux (x64):** Ubuntu or Debian: \`sudo apt install ./Furnace-linux-x64.deb\`. Fedora: \`sudo dnf install ./Furnace-linux-x64.rpm\`."; fi
+              echo
+              echo "Already using Furnace 0.2.0 or later? It offers this update by itself and installs it in place."
+            } > notes.md
+            gh release create "$TAG" --draft --verify-tag --title "Furnace $VERSION" --notes-file notes.md "${downloads[@]}" dist/latest.json dist/latest.json.sig
+          else
+            gh release upload "$TAG" --clobber "${downloads[@]}" dist/latest.json dist/latest.json.sig
+          fi
+          {
+            echo "Draft release ready with: $INCLUDED. Publish it on GitHub to ship $TAG."
+            if [ -n "$MISSING" ]; then echo; echo "**Not included: $MISSING.** For a flaky failure, \`gh run rerun $GITHUB_RUN_ID --failed\` adds it (also after publishing); a failure that needs a fix ships in the next version."; fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,12 +1,13 @@
 // Writes the signed update feed for a release (run by .github/workflows/release.yml).
 //   FURNACE_UPDATE_KEY=<Ed25519 private key, PEM> node scripts/release-feed.mjs <version> <dir> [notes]
-// <dir> holds the release downloads (Furnace-darwin-arm64.zip, FurnaceUserSetup-x64.exe,
-// Furnace-linux-x64.deb and .rpm). Writes
+// <dir> holds the release downloads of the platforms whose builds passed (Furnace-darwin-arm64.zip,
+// FurnaceUserSetup-x64.exe, Furnace-linux-x64.deb and .rpm); the feed lists only those, so the other
+// platforms' installed copies don't offer this release until their downloads are added. Writes
 // <dir>/latest.json (each platform's download with its size and SHA-256) and <dir>/latest.json.sig
 // (Ed25519 over the exact bytes), then checks the signature against release/update-key.pem, the
 // public key every build carries, so a wrong key fails the release instead of every update.
 import crypto from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { root } from './environment.mjs';
@@ -34,6 +35,7 @@ const base = `https://github.com/${updateRepository}/releases`;
 const assets = {};
 for (const [key, file] of Object.entries(downloads)) {
     const full = path.join(dir, file);
+    if (!existsSync(full)) continue;
     assets[key] = {
         file,
         url: `${base}/download/v${version}/${file}`,
@@ -41,6 +43,8 @@ for (const [key, file] of Object.entries(downloads)) {
         sha256: await sha256(full),
     };
 }
+if (!Object.keys(assets).length) throw new Error(`No release downloads in ${dir}.`);
+console.log(`Feed lists: ${Object.keys(assets).join(', ')}`);
 const feed = Buffer.from(
     JSON.stringify({ version, url: `${base}/tag/v${version}`, notes: notes.slice(0, 300), assets }, null, 2) + '\n',
 );
