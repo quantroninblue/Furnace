@@ -9,7 +9,8 @@ const { ResearchSources } = require('../research-contract.cjs');
 const { Conversation } = require('./conversation.cjs');
 async function fixture(t, run, extra = {}) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'conversation-'));
-    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    // Retries: on Windows a late audit-log write can leave the folder briefly non-empty.
+    t.after(() => fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
     const research = {
         sources: new ResearchSources('test'),
         resetScope: async () => research.sources.reset('next'),
