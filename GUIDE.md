@@ -378,7 +378,8 @@ Type `/` in the message box for the command list:
   the workspace page, `/zoom`, or `Ctrl+=` / `Ctrl+-` to adjust it.
 - **Window opacity:** the window is very slightly see-through. Change it with
   **Display → Window Opacity…** or the `aiGui.window.opacity` setting (0.5–1; 1 is
-  solid). It works on Linux with X11 and a compositing window manager.
+  solid). It works on macOS and Windows, and on Linux with X11 and a compositing window
+  manager.
 - **Run a command yourself** in the + menu switches the message box from talking to
   the agent to running your own commands (**Ask the agent** switches back).
 - Resuming a chat restores its messages, brief, sources and attachments; shared
@@ -416,4 +417,4 @@ Type `/` in the message box for the command list:
 | "Furnace couldn't update itself" | Choose **Download Instead** and install the new version from the Releases page. On macOS, move Furnace to Applications first if it says it is running from the disk image or a temporary copy. |
 | The Linux update didn't install | Installing needs your password; if you cancelled the prompt, Furnace offers the update again. You can also run `sudo apt install ./Furnace-linux-x64.deb` (or `sudo dnf install ./Furnace-linux-x64.rpm`) yourself. |
 | Something else went wrong | **Copy Diagnostics** (Settings → About & support, or `/diagnostics`) copies versions, settings and recent errors without conversation text or keys. **Send Feedback** opens a report you can check before sending. **Furnace: Show Log** opens the log. |
-| Run and Debug says "All debug extensions are disabled" | The built-in debugger wasn't downloaded. Run `node scripts/setup.mjs extensions-debug builtin-extensions` in `prototypes/code-oss`, then restart. |
+| Run and Debug says "All debug extensions are disabled" | The JavaScript debugger comes with Furnace, so this means the installation is incomplete. Install the latest version from the [Releases page](https://github.com/quantroninblue/Furnace/releases/latest) over it; your settings and conversations stay. |

@@ -1,6 +1,6 @@
 {
   "name": "furnace",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Furnace: a desktop coding workspace built on Code OSS where you and an AI agent work on the same project.",
   "license": "MIT",
