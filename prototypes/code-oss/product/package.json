@@ -3,7 +3,7 @@
   "displayName": "Furnace Workspace",
   "description": "Private foundation comparison: conversations, planning and reviewed edits.",
   "publisher": "ai-gui",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "engines": {
     "vscode": "^1.140.0"
