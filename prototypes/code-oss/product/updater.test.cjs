@@ -48,6 +48,18 @@ test('the feed lists each platform download with its size and SHA-256; malformed
     assert.deepEqual(updater.readFeed({ version: '1.0', url: 'https://example.com' }).assets, {});
 });
 
+test("a release without this platform's download isn't offered on it yet", () => {
+    const read = updater.readFeed(feed);
+    assert.equal(updater.releasedFor(read, 'darwin', 'arm64'), true);
+    assert.equal(updater.releasedFor(read, 'win32', 'x64'), false);
+    assert.equal(updater.releasedFor(read, 'linux', 'x64'), false);
+    const linux = { assets: { 'linux-x64-deb': {}, 'linux-x64-rpm': {} } };
+    assert.equal(updater.releasedFor(linux, 'linux', 'x64'), true);
+    assert.equal(updater.releasedFor(linux, 'linux', 'arm64'), false);
+    // A feed naming only a release page serves every platform.
+    assert.equal(updater.releasedFor({ assets: {} }, 'win32', 'x64'), true);
+});
+
 test("a feed is read only when its signature matches the build's public key", async () => {
     const bytes = Buffer.from(JSON.stringify(feed));
     assert.equal(updater.verifyFeed(bytes, sign(bytes), publicPem).version, '0.2.0');

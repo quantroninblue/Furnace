@@ -387,24 +387,50 @@ footer a:hover { color: var(--text); }
     : (/Macintosh|Mac OS X/.test(ua) && !/iPhone|iPad/.test(ua) && navigator.maxTouchPoints < 2) ? 'mac'
     : (/Linux|X11/.test(ua) && !/Android/.test(ua)) ? 'linux' : null;
   var labels = { mac: 'Download for macOS', windows: 'Download for Windows', linux: 'Download for Linux (.deb)' };
+  var primary = document.getElementById('primary-download');
+  var detected = os && document.querySelector('[data-download="' + os + '"]');
   if (os) {
-    var link = document.querySelector('[data-download="' + os + '"]');
-    var primary = document.getElementById('primary-download');
-    primary.href = link.href;
+    primary.href = detected.href;
     document.getElementById('primary-label').textContent = labels[os];
     document.getElementById('platform-' + os).classList.add('detected');
   }
+  var api = 'https://api.github.com/repos/quantroninblue/Furnace/releases';
+  var json = function (response) { if (!response.ok) throw new Error(String(response.status)); return response.json(); };
+  var describe = function (asset, version) {
+    var file = document.querySelector('[data-file="' + asset.name + '"]');
+    if (file) file.textContent = asset.name + ' · ' + Math.round(asset.size / 1048576) + ' MB · version ' + version;
+  };
 
-  fetch('https://api.github.com/repos/quantroninblue/Furnace/releases/latest', { headers: { accept: 'application/vnd.github+json' } })
-    .then(function (response) { if (!response.ok) throw new Error(String(response.status)); return response.json(); })
+  fetch(api + '/latest', { headers: { accept: 'application/vnd.github+json' } })
+    .then(json)
     .then(function (release) {
       var version = String(release.tag_name || '').replace(/^v/, '');
       var date = release.published_at ? new Date(release.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '';
       document.getElementById('release-line').textContent = 'Version ' + version + (date ? ' · ' + date : '') + ' · macOS, Windows and Linux · Updates itself';
-      (release.assets || []).forEach(function (asset) {
-        var file = document.querySelector('[data-file="' + asset.name + '"]');
-        if (file) file.textContent = asset.name + ' · ' + Math.round(asset.size / 1048576) + ' MB · version ' + version;
+      var names = (release.assets || []).map(function (asset) { describe(asset, version); return asset.name; });
+      // A release can come out before every platform's build: link a missing download to the newest
+      // release that has it, instead of a latest/download address that would fail.
+      var missing = Array.prototype.filter.call(document.querySelectorAll('[data-download]'), function (link) {
+        return names.indexOf(link.href.split('/').pop()) < 0;
       });
+      if (!missing.length) return;
+      return fetch(api + '?per_page=20', { headers: { accept: 'application/vnd.github+json' } })
+        .then(json)
+        .then(function (releases) {
+          missing.forEach(function (link) {
+            var name = link.href.split('/').pop();
+            releases.some(function (earlier) {
+              if (earlier.draft || earlier.prerelease) return false;
+              var asset = (earlier.assets || []).filter(function (a) { return a.name === name; })[0];
+              if (!asset) return false;
+              link.href = asset.browser_download_url;
+              describe(asset, String(earlier.tag_name || '').replace(/^v/, ''));
+              return true;
+            });
+          });
+          if (detected) primary.href = detected.href;
+        })
+        .catch(function () {});
     })
     .catch(function () {
       // No published release yet (or GitHub is unreachable): send people to the Releases page.
