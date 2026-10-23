@@ -1,5 +1,5 @@
 // Linux release build (run by .github/workflows/release.yml on an Ubuntu runner).
-//   node scripts/package-linux.mjs prepare             pinned upstream: all patches, Furnace product.json and icons
+//   node scripts/package-linux.mjs prepare [--cached]  pinned upstream: all patches, Furnace product.json and icons
 //   (then, in upstream: npm ci && npm run gulp vscode-linux-x64-min; then npm run build)
 //   node scripts/package-linux.mjs assemble [arch]     built-in extension and app entry
 //   (then, in upstream: npm run gulp vscode-linux-x64-prepare-deb vscode-linux-x64-prepare-rpm)
@@ -21,6 +21,11 @@ const description =
     'Furnace is an AI coding workspace built on Code OSS. Use ChatGPT, Claude Code, API keys or local Ollama models in one conversation, with checkpoints, plans that prove themselves and permissions you control.';
 const homepage = 'https://quantroninblue.github.io/Furnace/';
 const maintainer = 'Furnace <quantroninblue@users.noreply.github.com>';
+// Packages carry Furnace's version (upstream's gulp tasks write Code OSS's, e.g. 1.140.0-<timestamp>).
+// Epoch 1 keeps it newer than those 1.140.0 packages, which Furnace 0.2.0 shipped, so package managers
+// (and 0.2.0's updater, which runs a plain dnf install for the .rpm) treat it as an upgrade.
+const epoch = 1;
+const furnaceVersion = async () => JSON.parse(await readFile(path.join(root, 'product/package.json'), 'utf8')).version;
 
 async function assemble(arch = 'x64') {
     const output = path.join(path.dirname(upstream), `VSCode-linux-${arch}`);
@@ -33,6 +38,7 @@ async function assemble(arch = 'x64') {
 
 /** Rewrites the prepared .deb and .rpm (after the prepare-* gulp tasks, before build-*). */
 async function packaging(arch = 'x64') {
+    const version = await furnaceVersion();
     // .deb: Furnace's control fields; Furnace's maintainer scripts; no debconf question.
     const deb = path.join(upstream, `.build/linux/deb/${debArch(arch)}/furnace-${debArch(arch)}/DEBIAN`);
     const control = (await readFile(path.join(deb, 'control'), 'utf8'))
@@ -40,6 +46,7 @@ async function packaging(arch = 'x64') {
         .filter(line => !/^(Provides|Conflicts|Replaces):/.test(line))
         .map(line =>
             line
+                .replace(/^Version:.*/, `Version: ${epoch}:${version}`)
                 .replace(/^Maintainer:.*/, `Maintainer: ${maintainer}`)
                 .replace(/^Homepage:.*/, `Homepage: ${homepage}`),
         )
@@ -53,6 +60,8 @@ async function packaging(arch = 'x64') {
     // .rpm: Furnace's vendor, packager, summary and description (its scripts add no repository).
     const spec = path.join(upstream, `.build/linux/rpm/${rpmArch(arch)}/rpmbuild/SPECS/furnace.spec`);
     const text = (await readFile(spec, 'utf8'))
+        .replace(/^Version:.*$/m, `Epoch:    ${epoch}\nVersion:  ${version}`)
+        .replace(/^Release:.*$/m, 'Release:  1')
         .replace(/^Summary:.*$/m, `Summary:  ${summary}`)
         .replace(/^Vendor:.*$/m, 'Vendor:   Furnace')
         .replace(/^Packager:.*$/m, `Packager: ${maintainer}`)
@@ -60,8 +69,10 @@ async function packaging(arch = 'x64') {
         .replace(/%description\n[^\n]*\n/, `%description\n${description}\n`);
     if (text.split('\n').some(line => !line.trimStart().startsWith('#') && line.includes('yum.repos.d')))
         throw new Error('The .rpm spec would add a repository.');
+    if (!control.includes(`\nVersion: ${epoch}:${version}\n`) || !text.includes(`\nVersion:  ${version}\n`))
+        throw new Error('Could not set the package version.');
     await writeFile(spec, text);
-    console.log(`Packaging metadata: ${deb}, ${spec}`);
+    console.log(`Packaging metadata (version ${epoch}:${version}): ${deb}, ${spec}`);
 }
 
 async function collect(arch = 'x64') {
@@ -82,7 +93,7 @@ async function collect(arch = 'x64') {
 }
 
 const [command, ...args] = process.argv.slice(2);
-if (command === 'prepare') await prepare();
+if (command === 'prepare') await prepare({ cached: args.includes('--cached') });
 else if (command === 'assemble') await assemble(...args);
 else if (command === 'packaging') await packaging(...args);
 else if (command === 'collect') await collect(...args);
